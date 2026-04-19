@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { BarChart3, GraduationCap, LayoutDashboard, LineChart, LogOut } from "lucide-react";
+import { BarChart3, GraduationCap, LayoutDashboard, LineChart, LogOut, Activity } from "lucide-react";
 
 const items = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -10,9 +10,13 @@ const items = [
 ];
 
 export const AppNav = () => {
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const loc = useLocation();
+
+  const isAdmin = user?.email === "admin@learnchart.com";
+  
+  const navItems = isAdmin ? [...items, { to: "/admin", label: "Admin", icon: Activity }] : items;
 
   return (
     <header className="h-14 border-b border-border/60 bg-card/40 backdrop-blur flex items-center px-4 gap-2 shrink-0">
@@ -21,7 +25,7 @@ export const AppNav = () => {
         <span className="font-display font-bold hidden sm:inline">LearnChart</span>
       </Link>
       <nav className="flex items-center gap-1">
-        {items.map(({ to, label, icon: Icon }) => {
+        {navItems.map(({ to, label, icon: Icon }) => {
           const active = loc.pathname === to || (to === "/workspace" && loc.pathname.startsWith("/workspace"));
           return (
             <Link key={to} to={to} className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition ${active ? "bg-primary/10 text-gold" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"}`}>

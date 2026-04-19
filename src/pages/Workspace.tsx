@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Plus, Search, Trash2, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { Plus, Search, Trash2, TrendingDown, TrendingUp, Wallet, RefreshCw } from "lucide-react";
 
 type Position = { id: string; symbol: string; quantity: number; avg_price: number };
 type Trade = { id: string; symbol: string; side: string; quantity: number; price: number; total: number; created_at: string };
@@ -94,6 +94,17 @@ const Workspace = () => {
 
   const handleSignOut = async () => { await signOut(); navigate("/"); };
 
+  const restoreBalance = async () => {
+    if (!user) return;
+    setSubmitting(true);
+    const { error } = await supabase.from("profiles").update({ cash_balance: 10000 }).eq("id", user.id);
+    setSubmitting(false);
+    if (error) { toast.error("Failed to restore balance"); return; }
+    toast.success("Demo balance restored to $10,000!");
+    setCash(10000);
+    // don't completely wipe trades just reset cash to give them a lifeline
+  };
+
   const positionPnL = currentPosition && price
     ? (price - currentPosition.avg_price) * currentPosition.quantity
     : 0;
@@ -165,10 +176,15 @@ const Workspace = () => {
 
             <h2 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Paper Trade</h2>
             <div className="rounded-lg bg-background/50 border border-border/60 p-3 space-y-3">
-              <div className="flex justify-between text-xs">
+              <div className="flex justify-between text-xs items-center">
                 <span className="text-muted-foreground">Cash</span>
                 <span className="font-mono-num">{fmtMoney(cash)}</span>
               </div>
+              {cash < 1 && (
+                <Button size="sm" variant="outline" className="w-full text-xs h-7 text-gold border-gold/30 hover:bg-gold/10" disabled={submitting} onClick={restoreBalance}>
+                  <RefreshCw className="w-3 h-3 mr-1.5" /> Restore Balance
+                </Button>
+              )}
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Live price</span>
                 <span className="font-mono-num">{price ? fmtMoney(price) : "—"}</span>
