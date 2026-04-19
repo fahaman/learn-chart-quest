@@ -1,0 +1,123 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* LearnChart — dark trading terminal palette */
+    --background: 215 16% 16%;          /* #222831 */
+    --foreground: 0 0% 93%;              /* #EEEEEE */
+
+    --card: 215 13% 25%;                 /* #393E46 */
+    --card-foreground: 0 0% 93%;
+
+    --popover: 215 13% 22%;
+    --popover-foreground: 0 0% 93%;
+
+    --primary: 43 100% 71%;              /* #FFD369 */
+    --primary-foreground: 215 16% 12%;
+
+    --secondary: 215 13% 25%;
+    --secondary-foreground: 0 0% 93%;
+
+    --muted: 215 13% 22%;
+    --muted-foreground: 215 8% 65%;
+
+    --accent: 43 100% 71%;
+    --accent-foreground: 215 16% 12%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 98%;
+
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 98%;
+
+    --border: 215 13% 30%;
+    --input: 215 13% 28%;
+    --ring: 43 100% 71%;
+
+    --radius: 0.75rem;
+
+    --gradient-hero: radial-gradient(ellipse 80% 60% at 50% 0%, hsl(43 100% 71% / 0.18), transparent 70%),
+                     linear-gradient(180deg, hsl(215 16% 18%), hsl(215 16% 12%));
+    --gradient-gold: linear-gradient(135deg, hsl(43 100% 71%), hsl(38 95% 60%));
+    --gradient-card: linear-gradient(145deg, hsl(215 13% 27%), hsl(215 13% 22%));
+    --shadow-gold: 0 10px 40px -10px hsl(43 100% 71% / 0.45);
+    --shadow-elevated: 0 20px 50px -20px hsl(0 0% 0% / 0.6);
+    --shadow-glow: 0 0 60px hsl(43 100% 71% / 0.25);
+
+    --sidebar-background: 215 16% 14%;
+    --sidebar-foreground: 0 0% 93%;
+    --sidebar-primary: 43 100% 71%;
+    --sidebar-primary-foreground: 215 16% 12%;
+    --sidebar-accent: 215 13% 22%;
+    --sidebar-accent-foreground: 0 0% 93%;
+    --sidebar-border: 215 13% 24%;
+    --sidebar-ring: 43 100% 71%;
+  }
+
+  .dark {
+    /* same dark palette - app is dark by default */
+    --background: 215 16% 16%;
+    --foreground: 0 0% 93%;
+    --card: 215 13% 25%;
+    --card-foreground: 0 0% 93%;
+    --popover: 215 13% 22%;
+    --popover-foreground: 0 0% 93%;
+    --primary: 43 100% 71%;
+    --primary-foreground: 215 16% 12%;
+    --secondary: 215 13% 25%;
+    --secondary-foreground: 0 0% 93%;
+    --muted: 215 13% 22%;
+    --muted-foreground: 215 8% 65%;
+    --accent: 43 100% 71%;
+    --accent-foreground: 215 16% 12%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 215 13% 30%;
+    --input: 215 13% 28%;
+    --ring: 43 100% 71%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { @apply dark; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+  }
+  h1, h2, h3, h4 { font-family: 'Space Grotesk', sans-serif; letter-spacing: -0.02em; }
+  .font-mono-num { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+}
+
+@layer utilities {
+  .bg-hero { background: var(--gradient-hero); }
+  .bg-gold { background: var(--gradient-gold); }
+  .bg-card-grad { background: var(--gradient-card); }
+  .shadow-gold { box-shadow: var(--shadow-gold); }
+  .shadow-elevated { box-shadow: var(--shadow-elevated); }
+  .shadow-glow { box-shadow: var(--shadow-glow); }
+  .text-gold { color: hsl(var(--primary)); }
+  .ring-gold { box-shadow: 0 0 0 1px hsl(var(--primary) / 0.4); }
+  .grid-bg {
+    background-image:
+      linear-gradient(hsl(var(--border) / 0.3) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.3) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+}
+
+@keyframes float-up {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-float-up { animation: float-up 0.8s ease-out both; }
+@keyframes pulse-gold {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.5); }
+  50% { box-shadow: 0 0 0 12px hsl(var(--primary) / 0); }
+}
+.animate-pulse-gold { animation: pulse-gold 2s infinite; }
