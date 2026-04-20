@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useBinancePrice } from "@/hooks/useBinancePrice";
 import { TradingViewChart } from "@/components/workspace/TradingViewChart";
@@ -17,96 +17,173 @@ type Position = { id: string; symbol: string; quantity: number; avg_price: numbe
 type Trade = { id: string; symbol: string; side: string; quantity: number; price: number; total: number; created_at: string };
 type Watch = { id: string; symbol: string };
 
-const fmtMoney = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtNum = (n: number, d = 2) => n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+/**
+ * Formats a number as a standard USD currency string.
+ */
+const formatMoney = (amount: number) =>
+  amount.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const formatNumber = (amount: number, decimals = 2) => 
+  amount.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
 const Workspace = () => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const [symbol, setSymbol] = useState("BTCUSDT");
+  
+  // State for the active symbol currently loaded in the charting layout
+  const [activeSymbol, setActiveSymbol] = useState("BTCUSDT");
+  
+  // Portfolio state
   const [watchlist, setWatchlist] = useState<Watch[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
-  const [cash, setCash] = useState<number>(0);
-  const [qty, setQty] = useState("0.01");
-  const [newSym, setNewSym] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [cashBalance, setCashBalance] = useState<number>(0);
+  
+  // Trade execution state
+  const [orderQuantity, setOrderQuantity] = useState("0.01");
+  const [newWatchlistSymbol, setNewWatchlistSymbol] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { price, change24h } = useBinancePrice(symbol);
+  // Live market data
+  const { price: livePrice, change24h } = useBinancePrice(activeSymbol);
 
-  const refresh = async () => {
+  /**
+   * Refreshes the user's entire portfolio state from the backend.
+   */
+  const refreshPortfolio = async () => {
     if (!user) return;
-    const [{ data: prof }, { data: pos }, { data: tr }, { data: wl }] = await Promise.all([
-      supabase.from("profiles").select("cash_balance").eq("id", user.id).maybeSingle(),
-      supabase.from("positions").select("*").order("updated_at", { ascending: false }),
-      supabase.from("trades").select("*").order("created_at", { ascending: false }).limit(50),
-      supabase.from("watchlist").select("*").order("created_at"),
-    ]);
-    if (prof) setCash(Number(prof.cash_balance));
-    setPositions((pos ?? []).map((p: any) => ({ ...p, quantity: Number(p.quantity), avg_price: Number(p.avg_price) })));
-    setTrades((tr ?? []).map((t: any) => ({ ...t, quantity: Number(t.quantity), price: Number(t.price), total: Number(t.total) })));
-    setWatchlist(wl ?? []);
-  };
-
-  useEffect(() => { refresh(); }, [user]);
-
-  const currentPosition = useMemo(() => positions.find((p) => p.symbol === symbol), [positions, symbol]);
-
-  // Compute live P&L per position for the active symbol; for others fall back to avg_price
-  const portfolioValue = useMemo(() => {
-    let total = cash;
-    for (const p of positions) {
-      const px = p.symbol === symbol && price ? price : p.avg_price;
-      total += p.quantity * px;
+    try {
+      const data = await apiFetch("/trade/portfolio");
+      setCashBalance(data.cash_balance);
+      setPositions(data.positions);
+      setTrades(data.trades);
+      setWatchlist(data.watchlist);
+    } catch (error: unknown) {
+      toast.error("Error refreshing portfolio: " + (error as Error).message);
     }
-    return total;
-  }, [cash, positions, symbol, price]);
-
-  const submitOrder = async (side: "BUY" | "SELL") => {
-    if (!price) { toast.error("Waiting for live price…"); return; }
-    const q = Number(qty);
-    if (!q || q <= 0) { toast.error("Enter a valid quantity"); return; }
-    setSubmitting(true);
-    const { error } = await supabase.rpc("execute_trade", {
-      _symbol: symbol, _side: side, _quantity: q, _price: price,
-    });
-    setSubmitting(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success(`${side} ${q} ${symbol} @ ${fmtMoney(price)}`);
-    refresh();
   };
 
-  const addSymbol = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const s = newSym.trim().toUpperCase();
-    if (!/^[A-Z0-9.\-]{2,15}$/.test(s)) { toast.error("Invalid symbol format"); return; }
-    const { error } = await supabase.from("watchlist").insert({ user_id: user!.id, symbol: s });
-    if (error) { toast.error(error.message); return; }
-    setNewSym("");
-    refresh();
+  // Fetch initial portfolio state on load
+  useEffect(() => { 
+    refreshPortfolio(); 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // Determine the user's current open position for the actively viewed symbol
+  const currentPosition = useMemo(() => 
+    positions.find((position) => position.symbol === activeSymbol), 
+  [positions, activeSymbol]);
+
+  /**
+   * Computes the total net liquidation value of the portfolio.
+   * It calculates the live P&L for the currently viewed asset, and falls back to
+   * average price for background assets.
+   */
+  const portfolioValue = useMemo(() => {
+    let totalValue = cashBalance;
+    for (const position of positions) {
+      const currentPrice = position.symbol === activeSymbol && livePrice ? livePrice : position.avg_price;
+      totalValue += position.quantity * currentPrice;
+    }
+    return totalValue;
+  }, [cashBalance, positions, activeSymbol, livePrice]);
+
+  /**
+   * Executes a paper trade.
+   */
+  const handleOrderSubmission = async (tradeSide: "BUY" | "SELL") => {
+    if (!livePrice) { 
+      toast.error("Waiting for real-time price feed to connect..."); 
+      return; 
+    }
+    
+    // Validate the order quantity
+    const parsedQuantity = Number(orderQuantity);
+    if (!parsedQuantity || parsedQuantity <= 0) { 
+      toast.error("Please enter a valid numeric quantity."); 
+      return; 
+    }
+    
+    setIsSubmitting(true);
+    try {
+      // Send trade execution request to the Node.js backend
+      await apiFetch("/trade/execute", {
+        method: "POST",
+        body: JSON.stringify({ 
+          symbol: activeSymbol, 
+          side: tradeSide, 
+          quantity: parsedQuantity, 
+          price: livePrice 
+        }),
+      });
+      
+      toast.success(`Successfully executed ${tradeSide} for ${parsedQuantity} ${activeSymbol} @ ${formatMoney(livePrice)}`);
+      refreshPortfolio(); // Sync new balances immediately
+    } catch (error: unknown) {
+      toast.error((error as Error).message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const removeSymbol = async (id: string) => {
-    await supabase.from("watchlist").delete().eq("id", id);
-    refresh();
+  /**
+   * Adds a new symbol to the user's permanent watchlist.
+   */
+  const handleAddToWatchlist = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const cleanSymbol = newWatchlistSymbol.trim().toUpperCase();
+    
+    // Validate basic alphanumeric exchange prefix constraints (e.g. NSE:TCS)
+    if (!/^[A-Z0-9.\-:]{2,20}$/.test(cleanSymbol)) { 
+      toast.error("Invalid symbol format provided. Please check and try again."); 
+      return; 
+    }
+    
+    try {
+      await apiFetch("/trade/watchlist", {
+        method: "POST",
+        body: JSON.stringify({ symbol: cleanSymbol }),
+      });
+      setNewWatchlistSymbol(""); // Clear the input field
+      refreshPortfolio(); // Update the UI watchlist
+    } catch (error: unknown) {
+       toast.error((error as Error).message);
+    }
   };
 
-  const handleSignOut = async () => { await signOut(); navigate("/"); };
+  /**
+   * Removes a tracking item from the watchlist.
+   */
+  const handleRemoveFromWatchlist = async (idToRemove: string) => {
+    try {
+      await apiFetch(`/trade/watchlist/${idToRemove}`, { method: "DELETE" });
+      refreshPortfolio();
+    } catch (error: unknown) {
+      toast.error((error as Error).message);
+    }
+  };
+
+  const handleSignOut = async () => { 
+    await signOut(); 
+    navigate("/"); 
+  };
 
   const restoreBalance = async () => {
     if (!user) return;
-    setSubmitting(true);
-    const { error } = await supabase.from("profiles").update({ cash_balance: 10000 }).eq("id", user.id);
-    setSubmitting(false);
-    if (error) { toast.error("Failed to restore balance"); return; }
-    toast.success("Demo balance restored to $10,000!");
-    setCash(10000);
-    // don't completely wipe trades just reset cash to give them a lifeline
+    setIsSubmitting(true);
+    try {
+      await apiFetch("/trade/restore-balance", { method: "POST" });
+      toast.success("Demo balance restored to $10,000!");
+      setCashBalance(10000);
+    } catch (error: unknown) {
+      toast.error("Failed to restore balance");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const positionPnL = currentPosition && price
-    ? (price - currentPosition.avg_price) * currentPosition.quantity
+  const positionPnL = currentPosition && livePrice
+    ? (livePrice - currentPosition.avg_price) * currentPosition.quantity
     : 0;
 
   return (
@@ -116,7 +193,7 @@ const Workspace = () => {
         <div className="ml-auto flex items-center gap-2 px-3 py-1 rounded-md bg-muted/40 border border-border/60">
           <Wallet className="w-3.5 h-3.5 text-gold" />
           <span className="text-[11px] text-muted-foreground">Portfolio</span>
-          <span className="font-mono-num font-semibold text-xs">{fmtMoney(portfolioValue)}</span>
+          <span className="font-mono-num font-semibold text-xs">{formatMoney(portfolioValue)}</span>
         </div>
       </div>
 
@@ -127,12 +204,12 @@ const Workspace = () => {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs uppercase tracking-wider text-muted-foreground">Watchlist</h2>
           </div>
-          <form onSubmit={addSymbol} className="relative mb-3">
+          <form onSubmit={handleAddToWatchlist} className="relative mb-3">
             <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-muted-foreground" />
             <Input 
-              value={newSym} 
-              onChange={(e) => setNewSym(e.target.value.toUpperCase())} 
-              placeholder="Search or add (e.g. AAPL, BTCUSDT)" 
+              value={newWatchlistSymbol} 
+              onChange={(e) => setNewWatchlistSymbol(e.target.value.toUpperCase())} 
+              placeholder="Search or add (e.g. NSE:TCS, AAPL, BTCUSDT)" 
               className="h-8 pl-8 pr-8 text-[11px] font-mono bg-background" 
             />
             <Button type="submit" size="sm" variant="ghost" className="absolute right-0 top-0 h-8 px-2 text-muted-foreground">
@@ -140,8 +217,14 @@ const Workspace = () => {
             </Button>
           </form>
           <div className="space-y-1">
-            {watchlist.map((w) => (
-              <WatchRow key={w.id} item={w} active={w.symbol === symbol} onSelect={() => setSymbol(w.symbol)} onRemove={() => removeSymbol(w.id)} />
+            {watchlist.map((watchlistItem) => (
+              <WatchRow 
+                key={watchlistItem.id} 
+                item={watchlistItem} 
+                active={watchlistItem.symbol === activeSymbol} 
+                onSelect={() => setActiveSymbol(watchlistItem.symbol)} 
+                onRemove={() => handleRemoveFromWatchlist(watchlistItem.id)} 
+              />
             ))}
             {watchlist.length === 0 && <div className="text-xs text-muted-foreground">Add a Binance pair to start.</div>}
           </div>
@@ -151,11 +234,11 @@ const Workspace = () => {
         <main className="bg-background flex flex-col min-h-0">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
             <div>
-              <div className="font-display font-bold text-lg">{symbol}</div>
-              <div className="text-xs text-muted-foreground">Binance · Live</div>
+              <div className="font-display font-bold text-lg">{activeSymbol}</div>
+              <div className="text-xs text-muted-foreground">{activeSymbol.endsWith("USDT") ? "Crypto" : "Equities"} · Live</div>
             </div>
             <div className="text-right">
-              <div className="font-mono-num font-semibold text-xl">{price ? fmtMoney(price) : "—"}</div>
+              <div className="font-mono-num font-semibold text-xl">{livePrice ? formatMoney(livePrice) : "—"}</div>
               {change24h !== null && (
                 <div className={`text-xs font-mono-num flex items-center gap-1 justify-end ${change24h >= 0 ? "text-success" : "text-destructive"}`}>
                   {change24h >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
@@ -165,41 +248,41 @@ const Workspace = () => {
             </div>
           </div>
           <div className="flex-1 min-h-[420px]">
-            <TradingViewChart symbol={symbol} />
+            <TradingViewChart symbol={activeSymbol} />
           </div>
         </main>
 
         {/* Trade panel */}
         <aside className="bg-card/40 p-4 overflow-auto space-y-4">
-          <AISignal symbol={symbol} />
+          <AISignal symbol={activeSymbol} />
           <div>
 
             <h2 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Paper Trade</h2>
             <div className="rounded-lg bg-background/50 border border-border/60 p-3 space-y-3">
               <div className="flex justify-between text-xs items-center">
                 <span className="text-muted-foreground">Cash</span>
-                <span className="font-mono-num">{fmtMoney(cash)}</span>
+                <span className="font-mono-num">{formatMoney(cashBalance)}</span>
               </div>
-              {cash < 1 && (
-                <Button size="sm" variant="outline" className="w-full text-xs h-7 text-gold border-gold/30 hover:bg-gold/10" disabled={submitting} onClick={restoreBalance}>
+              {cashBalance < 1 && (
+                <Button size="sm" variant="outline" className="w-full text-xs h-7 text-gold border-gold/30 hover:bg-gold/10" disabled={isSubmitting} onClick={restoreBalance}>
                   <RefreshCw className="w-3 h-3 mr-1.5" /> Restore Balance
                 </Button>
               )}
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Live price</span>
-                <span className="font-mono-num">{price ? fmtMoney(price) : "—"}</span>
+                <span className="font-mono-num">{livePrice ? formatMoney(livePrice) : "—"}</span>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="qty" className="text-xs">Quantity</Label>
-                <Input id="qty" type="number" step="0.0001" min="0" value={qty} onChange={(e) => setQty(e.target.value)} className="font-mono h-9" />
+                <Input id="qty" type="number" step="0.0001" min="0" value={orderQuantity} onChange={(e) => setOrderQuantity(e.target.value)} className="font-mono h-9" />
               </div>
               <div className="flex justify-between text-xs pt-1 border-t border-border/60">
                 <span className="text-muted-foreground">Order value</span>
-                <span className="font-mono-num">{price ? fmtMoney(Number(qty || 0) * price) : "—"}</span>
+                <span className="font-mono-num">{livePrice ? formatMoney(Number(orderQuantity || 0) * livePrice) : "—"}</span>
               </div>
               <div className="grid grid-cols-2 gap-2 pt-1">
-                <Button variant="success" disabled={submitting} onClick={() => submitOrder("BUY")}>Buy</Button>
-                <Button variant="destructive" disabled={submitting} onClick={() => submitOrder("SELL")}>Sell</Button>
+                <Button variant="success" disabled={isSubmitting} onClick={() => handleOrderSubmission("BUY")}>Buy</Button>
+                <Button variant="destructive" disabled={isSubmitting} onClick={() => handleOrderSubmission("SELL")}>Sell</Button>
               </div>
             </div>
           </div>
@@ -208,13 +291,13 @@ const Workspace = () => {
             <div>
               <h2 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Open Position</h2>
               <div className="rounded-lg bg-background/50 border border-border/60 p-3 text-sm space-y-1.5">
-                <Row label="Quantity" value={fmtNum(currentPosition.quantity, 4)} />
-                <Row label="Avg price" value={fmtMoney(currentPosition.avg_price)} />
-                <Row label="Mark" value={price ? fmtMoney(price) : "—"} />
+                <Row label="Quantity" value={formatNumber(currentPosition.quantity, 4)} />
+                <Row label="Avg price" value={formatMoney(currentPosition.avg_price)} />
+                <Row label="Mark" value={livePrice ? formatMoney(livePrice) : "—"} />
                 <div className="flex justify-between pt-1 border-t border-border/60">
                   <span className="text-muted-foreground text-xs">Unrealized P&L</span>
                   <span className={`font-mono-num font-semibold ${positionPnL >= 0 ? "text-success" : "text-destructive"}`}>
-                    {positionPnL >= 0 ? "+" : ""}{fmtMoney(positionPnL)}
+                    {positionPnL >= 0 ? "+" : ""}{formatMoney(positionPnL)}
                   </span>
                 </div>
               </div>
@@ -234,13 +317,13 @@ const Workspace = () => {
               </thead>
               <tbody>
                 {positions.map((p) => {
-                  const px = p.symbol === symbol && price ? price : p.avg_price;
+                  const px = p.symbol === activeSymbol && livePrice ? livePrice : p.avg_price;
                   return (
-                    <tr key={p.id} className="border-t border-border/60 hover:bg-muted/20 cursor-pointer" onClick={() => setSymbol(p.symbol)}>
+                    <tr key={p.id} className="border-t border-border/60 hover:bg-muted/20 cursor-pointer" onClick={() => setActiveSymbol(p.symbol)}>
                       <td className="p-2 font-mono">{p.symbol}</td>
-                      <td className="p-2 text-right font-mono-num">{fmtNum(p.quantity, 4)}</td>
-                      <td className="p-2 text-right font-mono-num">{fmtMoney(p.avg_price)}</td>
-                      <td className="p-2 text-right font-mono-num">{fmtMoney(p.quantity * px)}</td>
+                      <td className="p-2 text-right font-mono-num">{formatNumber(p.quantity, 4)}</td>
+                      <td className="p-2 text-right font-mono-num">{formatMoney(p.avg_price)}</td>
+                      <td className="p-2 text-right font-mono-num">{formatMoney(p.quantity * px)}</td>
                     </tr>
                   );
                 })}
@@ -262,8 +345,8 @@ const Workspace = () => {
                     <td className="p-2 text-xs text-muted-foreground">{new Date(t.created_at).toLocaleTimeString()}</td>
                     <td className="p-2 font-mono">{t.symbol}</td>
                     <td className={`p-2 font-semibold text-xs ${t.side === "BUY" ? "text-success" : "text-destructive"}`}>{t.side}</td>
-                    <td className="p-2 text-right font-mono-num">{fmtNum(t.quantity, 4)}</td>
-                    <td className="p-2 text-right font-mono-num">{fmtMoney(t.price)}</td>
+                    <td className="p-2 text-right font-mono-num">{formatNumber(t.quantity, 4)}</td>
+                    <td className="p-2 text-right font-mono-num">{formatMoney(t.price)}</td>
                   </tr>
                 ))}
                 {trades.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-muted-foreground text-xs">No trades yet.</td></tr>}
@@ -272,7 +355,7 @@ const Workspace = () => {
           </div>
         </div>
       </section>
-      <AIChat symbol={symbol} />
+      <AIChat symbol={activeSymbol} />
     </div>
   );
 };
@@ -287,7 +370,7 @@ const WatchRow = ({ item, active, onSelect, onRemove }: { item: Watch; active: b
     <div className={`group flex items-center gap-2 px-2 py-2 rounded-md cursor-pointer transition ${active ? "bg-primary/10 ring-gold" : "hover:bg-muted/40"}`} onClick={onSelect}>
       <div className="flex-1 min-w-0">
         <div className="font-mono text-xs">{item.symbol}</div>
-        <div className="text-[10px] text-muted-foreground font-mono-num">{price ? fmtMoney(price) : "—"}</div>
+        <div className="text-[10px] text-muted-foreground font-mono-num">{price ? formatMoney(price) : "—"}</div>
       </div>
       <div className={`text-[11px] font-mono-num ${change24h !== null && change24h >= 0 ? "text-success" : "text-destructive"}`}>
         {change24h !== null ? `${change24h >= 0 ? "+" : ""}${change24h.toFixed(1)}%` : "—"}

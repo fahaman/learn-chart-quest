@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
 
     const klRes = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1h&limit=200`);
     if (!klRes.ok) throw new Error(`Binance error: ${klRes.status}`);
-    const kl = await klRes.json() as any[][];
+    const kl = await klRes.json() as unknown[][];
     const closes = kl.map((c) => parseFloat(c[4]));
     const last = closes[closes.length - 1];
 

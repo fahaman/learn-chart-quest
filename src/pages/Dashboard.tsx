@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { Link, useNavigate } from "react-router-dom";
+import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useBinancePrice } from "@/hooks/useBinancePrice";
 import { AppNav } from "@/components/AppNav";
@@ -9,7 +9,7 @@ import { ArrowRight, BarChart3, BookOpen, GraduationCap, TrendingDown, TrendingU
 
 const fmtMoney = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
-const StatCard = ({ icon: Icon, label, value, hint, accent }: any) => (
+const StatCard = ({ icon: Icon, label, value, hint, accent }: { icon: any, label: string, value: string | number, hint?: string, accent?: string }) => (
   <div className="rounded-2xl bg-card-grad border border-border/60 p-5 shadow-elevated">
     <div className="flex items-center gap-2 text-xs text-muted-foreground"><Icon className="w-4 h-4 text-gold" /> {label}</div>
     <div className={`mt-2 font-display text-3xl font-bold font-mono-num ${accent ?? ""}`}>{value}</div>
@@ -35,6 +35,7 @@ const MarketRow = ({ symbol }: { symbol: string }) => {
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [cash, setCash] = useState(0);
   const [holdingsValue, setHoldingsValue] = useState(0);
   const [tradesCount, setTradesCount] = useState(0);
@@ -43,25 +44,30 @@ const Dashboard = () => {
   const [recent, setRecent] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!user) return;
-    (async () => {
-      const [{ data: prof }, { data: pos }, { count: tradeCount }, { data: rec }, { data: lessons }, { data: prog }] = await Promise.all([
-        supabase.from("profiles").select("cash_balance").eq("id", user.id).maybeSingle(),
-        supabase.from("positions").select("symbol,quantity,avg_price"),
-        supabase.from("trades").select("*", { count: "exact", head: true }),
-        supabase.from("trades").select("*").order("created_at", { ascending: false }).limit(5),
-        supabase.from("lessons").select("id"),
-        supabase.from("lesson_progress").select("completed").eq("completed", true),
-      ]);
-      if (prof) setCash(Number(prof.cash_balance));
-      const value = (pos ?? []).reduce((s, p: any) => s + Number(p.quantity) * Number(p.avg_price), 0);
-      setHoldingsValue(value);
-      setTradesCount(tradeCount ?? 0);
-      setRecent(rec ?? []);
-      setTotalLessons(lessons?.length ?? 0);
-      setDoneLessons(prog?.length ?? 0);
-    })();
-  }, [user]);
+    if (!user) {
+      navigate("/");
+      return;
+    }
+    const fetchData = async () => {
+      try {
+        const port = await apiFetch("/trade/portfolio");
+        const prog = await apiFetch("/learn/progress");
+        
+        setCash(port.cash_balance);
+        const value = (port.positions ?? []).reduce((s: number, p: { quantity: number; avg_price: number }) => s + Number(p.quantity) * Number(p.avg_price), 0);
+        setHoldingsValue(value);
+        setTradesCount(port.trades?.length || 0);
+        setRecent(port.trades?.slice(0, 5) || []);
+        
+        // Use a static total config here, or fetch from config
+        setTotalLessons(10); 
+        setDoneLessons(prog.filter((p: any) => p.completed).length);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+    fetchData();
+  }, [user, navigate]);
 
   const portfolio = cash + holdingsValue;
   const pct = totalLessons ? Math.round((doneLessons / totalLessons) * 100) : 0;
@@ -96,7 +102,7 @@ const Dashboard = () => {
                 <tbody>
                   {recent.map((t) => (
                     <tr key={t.id} className="border-t border-border/60">
-                      <td className="p-2 text-xs text-muted-foreground">{new Date(t.created_at).toLocaleString()}</td>
+                      <td className="p-2 text-xs text-muted-foreground">{new Date(t.created_at || t.createdAt).toLocaleString()}</td>
                       <td className="p-2 font-mono">{t.symbol}</td>
                       <td className={`p-2 font-semibold text-xs ${t.side === "BUY" ? "text-success" : "text-destructive"}`}>{t.side}</td>
                       <td className="p-2 text-right font-mono-num">{Number(t.quantity).toFixed(4)}</td>

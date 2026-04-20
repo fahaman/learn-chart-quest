@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
 import { AppNav } from "@/components/AppNav";
 import { Users, Activity, DollarSign, TrendingUp, TrendingDown, BookOpen, GraduationCap, BarChart3 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -32,66 +32,72 @@ const Admin = () => {
   const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
   const [topCrypto, setTopCrypto] = useState<{symbol: string, count: number}[]>([]);
   const [topStocks, setTopStocks] = useState<{symbol: string, count: number}[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (user?.email !== "admin@learnchart.com") return;
+    
     const fetchAdminData = async () => {
-      // Execute queries covering all users (assuming RLS allows, else returns logged in user data only)
-      const [
-        { data: profiles },
-        { data: trades },
-        { data: watchlist },
-        { data: progress }
-      ] = await Promise.all([
-        supabase.from("profiles").select("id, cash_balance"),
-        supabase.from("trades").select("*").order("created_at", { ascending: false }).limit(500),
-        supabase.from("watchlist").select("symbol"),
-        supabase.from("lesson_progress").select("user_id, completed").eq("completed", true)
-      ]);
-
-      const profs = profiles || [];
-      const trs = (trades as Trade[]) || [];
-      const wl = watchlist || [];
-      const lessons = progress || [];
-
-      // Calculate Stats
-      const totalWealth = profs.reduce((sum, p) => sum + Number(p.cash_balance || 0), 0);
-      const totalVolume = trs.reduce((sum, t) => sum + Number(t.total || 0), 0);
+      try {
+        const adminData = await apiFetch("/admin/stats");
+        
+        // Destructure and default our aggregate dataset
+        const userProfiles = adminData.profiles || [];
+        const tradeHistory = adminData.trades || [];
+        const userWatchlists = adminData.watchlist || [];
+        const learningProgress = adminData.progress || [];
+        
+        // Calculate Global Wealth & Trading Statistics
+        const globalPaperWealth = userProfiles.reduce((sum: number, profile: any) => sum + Number(profile.cash_balance || 0), 0);
+        const globalTradingVolume = tradeHistory.reduce((sum: number, trade: any) => sum + Number(trade.total || 0), 0);
       
-      const activeTraderSet = new Set(trs.map(t => t.user_id));
-      const activeLearnerSet = new Set(lessons.map((l: any) => l.user_id));
+        const uniqueActiveTraders = new Set(tradeHistory.map((trade: any) => trade.user_id));
+        const uniqueActiveLearners = new Set(learningProgress.map((lesson: any) => lesson.user_id));
 
-      // Calculate Top Assets Split
-      const isCrypto = (sym: string) => sym.endsWith("USDT") || sym.endsWith("USD") || sym.endsWith("BTC");
-      const cryptoCounts: Record<string, number> = {};
-      const stockCounts: Record<string, number> = {};
-      
-      trs.forEach(t => { 
-        const c = isCrypto(t.symbol) ? cryptoCounts : stockCounts;
-        c[t.symbol] = (c[t.symbol] || 0) + 1; 
-      });
-      wl.forEach(w => { 
-        const c = isCrypto(w.symbol) ? cryptoCounts : stockCounts;
-        c[w.symbol] = (c[w.symbol] || 0) + 1; 
-      });
-      
-      const tc = Object.entries(cryptoCounts).map(([symbol, count]) => ({ symbol, count })).sort((a, b) => b.count - a.count).slice(0, 5);
-      const ts = Object.entries(stockCounts).map(([symbol, count]) => ({ symbol, count })).sort((a, b) => b.count - a.count).slice(0, 5);
+        // Calculate and segment the top assets into Crypto vs Equities
+        const isCryptoAsset = (currencySymbol: string) => currencySymbol.endsWith("USDT") || currencySymbol.endsWith("USD") || currencySymbol.endsWith("BTC");
+        
+        const cryptoPopularityMap: Record<string, number> = {};
+        const stockPopularityMap: Record<string, number> = {};
+        
+        tradeHistory.forEach((trade: any) => { 
+          const targetMap = isCryptoAsset(trade.symbol) ? cryptoPopularityMap : stockPopularityMap;
+          targetMap[trade.symbol] = (targetMap[trade.symbol] || 0) + 1; 
+        });
+        
+        userWatchlists.forEach((watchItem: any) => { 
+          const targetMap = isCryptoAsset(watchItem.symbol) ? cryptoPopularityMap : stockPopularityMap;
+          targetMap[watchItem.symbol] = (targetMap[watchItem.symbol] || 0) + 1; 
+        });
+        
+        const topCryptoList = Object.entries(cryptoPopularityMap)
+          .map(([symbol, count]) => ({ symbol, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5);
+          
+        const topStockList = Object.entries(stockPopularityMap)
+          .map(([symbol, count]) => ({ symbol, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5);
 
-      setStats({
-        users: profs.length,
-        activeTraders: activeTraderSet.size,
-        activeLearners: activeLearnerSet.size,
-        totalTrades: trs.length, 
-        totalVolume,
-        totalWealth,
-        totalLessons: lessons.length
-      });
-      setTopCrypto(tc);
-      setTopStocks(ts);
-      setRecentTrades(trs.slice(0, 15)); // Display 15 most recent
-      setLoading(false);
+        setStats({
+          users: userProfiles.length,
+          activeTraders: uniqueActiveTraders.size,
+          activeLearners: uniqueActiveLearners.size,
+          totalTrades: tradeHistory.length, 
+          totalVolume: globalTradingVolume,
+          totalWealth: globalPaperWealth,
+          totalLessons: learningProgress.length
+        });
+        
+        setTopCrypto(topCryptoList);
+        setTopStocks(topStockList);
+        setRecentTrades(tradeHistory.slice(0, 15)); // Display the 15 most recent transactions
+        setIsLoading(false);
+      } catch (error: unknown) {
+        console.error("Failed to fetch admin statistics", error);
+        setIsLoading(false);
+      }
     };
 
     fetchAdminData();
@@ -113,7 +119,7 @@ const Admin = () => {
           <p className="text-muted-foreground text-sm mt-1">Deep analytics across trading volume, user engagement, and assets.</p>
         </div>
 
-        {loading ? (
+        {isLoading ? (
           <div className="animate-pulse space-y-8">
             <div className="grid md:grid-cols-4 lg:grid-cols-7 gap-4"><div className="h-24 bg-card-grad rounded-2xl" /><div className="h-24 bg-card-grad rounded-2xl" /><div className="h-24 bg-card-grad rounded-2xl" /><div className="h-24 bg-card-grad rounded-2xl" /></div>
             <div className="h-64 bg-card-grad rounded-2xl" />

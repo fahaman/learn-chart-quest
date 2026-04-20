@@ -28,40 +28,45 @@ export function useBinancePrice(symbol: string) {
     };
 
     fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol.toUpperCase()}`)
-      .then((r) => {
-        if (!r.ok) throw new Error("Not a Binance pair");
-        return r.json();
+      .then((response) => {
+        if (!response.ok) throw new Error("Not a valid Binance pair");
+        return response.json();
       })
-      .then((d) => {
-        if (d && d.lastPrice) {
-          setPrice(parseFloat(d.lastPrice));
-          setChange24h(parseFloat(d.priceChangePercent));
+      .then((tickerData) => {
+        if (tickerData && tickerData.lastPrice) {
+          setPrice(parseFloat(tickerData.lastPrice));
+          setChange24h(parseFloat(tickerData.priceChangePercent));
         }
 
-        const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${s}@ticker`);
-        wsRef.current = ws;
-        ws.onmessage = (ev) => {
+        // Connect to Binance WebSocket for real-time price updates
+        const binanceSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${s}@ticker`);
+        wsRef.current = binanceSocket;
+        
+        binanceSocket.onmessage = (event) => {
           try {
-            const d = JSON.parse(ev.data);
-            if (d.c) setPrice(parseFloat(d.c));
-            if (d.P) setChange24h(parseFloat(d.P));
-          } catch {}
+            const liveTicker = JSON.parse(event.data);
+            // 'c' represents the current closing price, 'P' represents the 24h price change percentage
+            if (liveTicker.c) setPrice(parseFloat(liveTicker.c));
+            if (liveTicker.P) setChange24h(parseFloat(liveTicker.P));
+          } catch (error) {
+             console.error("Failed to parse Binance websocket data", error);
+          }
         };
       })
       .catch(() => {
-        // Fallback: Educational Mock Simulation for stocks/unsupported crypto
+        // Fallback: Educational Mock Simulation for standard stock assets or unsupported crypto
         const basePrice = getBasePrice(symbol);
-        const change = (Math.random() * 4) - 2; // -2% to 2%
+        const change = (Math.random() * 4) - 2; // Simulate a -2% to 2% daily move
         
-        let currentPrice = basePrice;
-        setPrice(currentPrice);
+        let currentSimulationPrice = basePrice;
+        setPrice(currentSimulationPrice);
         setChange24h(change);
 
-        // Simulate live price updates every 1.5s
+        // Simulate live high-frequency price updates every 1.5 seconds
         intervalRef.current = window.setInterval(() => {
-          const move = currentPrice * (Math.random() - 0.5) * 0.001; // small random walk
-          currentPrice = currentPrice + move;
-          setPrice(currentPrice);
+          const tickMovement = currentSimulationPrice * (Math.random() - 0.5) * 0.001; // small random walk
+          currentSimulationPrice = currentSimulationPrice + tickMovement;
+          setPrice(currentSimulationPrice);
         }, 1500);
       });
 

@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { LineChart, Loader2 } from "lucide-react";
 import { z } from "zod";
@@ -20,6 +20,7 @@ const Auth = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const { signIn, signUp } = useAuth();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,17 +32,13 @@ const Auth = () => {
     setLoading(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email: parsed.data.email,
-          password: parsed.data.password,
-          options: { emailRedirectTo: `${window.location.origin}/workspace` },
-        });
-        if (error) throw error;
+        const { error } = await signUp(parsed.data.email, parsed.data.password);
+        if (error) throw new Error(error);
         toast.success("Account created — welcome aboard!");
         navigate("/workspace");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email: parsed.data.email, password: parsed.data.password });
-        if (error) throw error;
+        const { error } = await signIn(parsed.data.email, parsed.data.password);
+        if (error) throw new Error(error);
         toast.success("Signed in");
         navigate("/workspace");
       }

@@ -138,10 +138,10 @@ const Index = () => {
           <div className="grid md:grid-cols-[200px_1fr_240px] gap-px bg-border/60">
             <div className="bg-card p-4 space-y-2">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Watchlist</div>
-              {["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"].map((s, i) => (
-                <div key={s} className="flex justify-between text-xs py-1.5 px-2 rounded hover:bg-muted/40">
-                  <span className="font-mono">{s}</span>
-                  <span className={i % 2 ? "text-success font-mono-num" : "text-destructive font-mono-num"}>{i % 2 ? "+2.4%" : "-0.8%"}</span>
+              {["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"].map((symbol, index) => (
+                <div key={symbol} className="flex justify-between text-xs py-1.5 px-2 rounded hover:bg-muted/40">
+                  <span className="font-mono">{symbol}</span>
+                  <span className={index % 2 ? "text-success font-mono-num" : "text-destructive font-mono-num"}>{index % 2 ? "+2.4%" : "-0.8%"}</span>
                 </div>
               ))}
             </div>

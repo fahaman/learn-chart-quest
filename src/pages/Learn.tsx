@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { AppNav } from "@/components/AppNav";
 import { Button } from "@/components/ui/button";
@@ -25,111 +25,169 @@ const FALLBACK_VIDEOS: Record<string, string> = {
   "q9rVqOV3BSY": "p7HKvqRI_Bo",
 };
 
+const STATIC_LESSONS: Lesson[] = [
+  { id: "1", level: "Beginner", title: "What is Trading?", description: "Introduction to financial markets.", youtube_id: "Xn7KWR9EOGQ", order_index: 1, duration_min: 5 },
+  { id: "2", level: "Beginner", title: "How to read a Chart", description: "Candlesticks and timeframes.", youtube_id: "AqOyW0GFlhM", order_index: 2, duration_min: 8 },
+  { id: "3", level: "Intermediate", title: "Support and Resistance", description: "Key price levels.", youtube_id: "rtHWvHbLmZk", order_index: 1, duration_min: 12 },
+  { id: "4", level: "Intermediate", title: "Moving Averages", description: "Trend confirmation tools.", youtube_id: "JqXULuWZXZc", order_index: 2, duration_min: 10 },
+  { id: "5", level: "Advanced", title: "Risk Management", description: "Position sizing and stop losses.", youtube_id: "WN8YM0DVybg", order_index: 1, duration_min: 15 },
+  { id: "6", level: "Advanced", title: "Trading Psychology", description: "Controlling emotions during trades.", youtube_id: "uvoiHcfp9DE", order_index: 2, duration_min: 14 }
+];
+
 const Learn = () => {
   const { user } = useAuth();
-  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>(STATIC_LESSONS);
   const [progress, setProgress] = useState<Record<string, Progress>>({});
   const [active, setActive] = useState<Lesson | null>(null);
   
-  // Custom Curriculum State
-  const [showAdd, setShowAdd] = useState(false);
+  // Custom Curriculum Management State
+  const [showAddLessonModal, setShowAddLessonModal] = useState(false);
+  
   const [customLessons, setCustomLessons] = useState<Lesson[]>(() => {
-    const s = localStorage.getItem("custom_lessons");
-    return s ? JSON.parse(s) : [];
+    const storedCustomLessons = localStorage.getItem("custom_lessons");
+    return storedCustomLessons ? JSON.parse(storedCustomLessons) : [];
   });
-  const [hiddenIds, setHiddenIds] = useState<string[]>(() => {
-    const s = localStorage.getItem("hidden_lessons");
-    return s ? JSON.parse(s) : [];
+  
+  const [hiddenLessonIds, setHiddenLessonIds] = useState<string[]>(() => {
+    const storedHiddenIds = localStorage.getItem("hidden_lessons");
+    return storedHiddenIds ? JSON.parse(storedHiddenIds) : [];
   });
 
-  const [newTitle, setNewTitle] = useState("");
-  const [newDesc, setNewDesc] = useState("");
-  const [newYt, setNewYt] = useState("");
-  const [newLevel, setNewLevel] = useState<typeof LEVELS[number]>("Beginner");
+  // Modal form inputs
+  const [newLessonTitle, setNewLessonTitle] = useState("");
+  const [newLessonDescription, setNewLessonDescription] = useState("");
+  const [newLessonYoutubeUrl, setNewLessonYoutubeUrl] = useState("");
+  const [newLessonLevel, setNewLessonLevel] = useState<typeof LEVELS[number]>("Beginner");
 
-  const isAdmin = user?.email === "admin@learnchart.com";
+  const isAdminUser = user?.email === "admin@learnchart.com";
 
-  const refresh = async () => {
-    const [{ data: ls }, { data: prog }] = await Promise.all([
-      supabase.from("lessons").select("*").order("level").order("order_index"),
-      user ? supabase.from("lesson_progress").select("*") : Promise.resolve({ data: [] as any }),
-    ]);
-    setLessons(ls ?? []);
-    const map: Record<string, Progress> = {};
-    (prog ?? []).forEach((p: any) => (map[p.lesson_id] = p));
-    setProgress(map);
-  };
-
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [user]);
-
-  const removeLesson = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (id.startsWith("custom-")) {
-      const nw = customLessons.filter(x => x.id !== id);
-      setCustomLessons(nw);
-      localStorage.setItem("custom_lessons", JSON.stringify(nw));
-    } else {
-      const nw = [...hiddenIds, id];
-      setHiddenIds(nw);
-      localStorage.setItem("hidden_lessons", JSON.stringify(nw));
+  /**
+   * Refreshes the user's lesson progress from the database.
+   */
+  const refreshLearningProgress = async () => {
+    setLessons(STATIC_LESSONS);
+    if (!user) return;
+    try {
+      const dbProgress = await apiFetch("/learn/progress");
+      const progressMapping: Record<string, Progress> = {};
+      dbProgress.forEach((progressRecord: any) => (progressMapping[progressRecord.lesson_id] = progressRecord));
+      setProgress(progressMapping);
+    } catch (error: unknown) {
+      console.error(error);
     }
-    toast.success("Lesson removed.");
   };
 
-  const addCustomLesson = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle || !newYt) return;
-    const cleanYt = newYt.includes("v=") ? newYt.split("v=")[1].split("&")[0] : newYt.split("/").pop() || newYt;
+  useEffect(() => { 
+    refreshLearningProgress(); 
+    /* eslint-disable-next-line */ 
+  }, [user]);
+
+  /**
+   * Admin function to completely remove a lesson from the UI.
+   * If it's a built-in static lesson, it hides it via localStorage.
+   */
+  const handleRemoveLesson = (lessonId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (lessonId.startsWith("custom-")) {
+      const remainingCustomLessons = customLessons.filter(lesson => lesson.id !== lessonId);
+      setCustomLessons(remainingCustomLessons);
+      localStorage.setItem("custom_lessons", JSON.stringify(remainingCustomLessons));
+    } else {
+      const newHiddenIds = [...hiddenLessonIds, lessonId];
+      setHiddenLessonIds(newHiddenIds);
+      localStorage.setItem("hidden_lessons", JSON.stringify(newHiddenIds));
+    }
+    toast.success("Lesson successfully removed from curriculum.");
+  };
+
+  /**
+   * Submits the custom lesson form.
+   */
+  const handleAddCustomLesson = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!newLessonTitle || !newLessonYoutubeUrl) return;
     
-    const nw: Lesson = {
+    // Extract the YouTube Video ID from standard YouTube urls
+    const parsedYoutubeId = newLessonYoutubeUrl.includes("v=") 
+      ? newLessonYoutubeUrl.split("v=")[1].split("&")[0] 
+      : newLessonYoutubeUrl.split("/").pop() || newLessonYoutubeUrl;
+    
+    const newCurriculumItem: Lesson = {
       id: `custom-${Date.now()}`,
-      title: newTitle,
-      description: newDesc,
-      youtube_id: cleanYt,
-      level: newLevel,
+      title: newLessonTitle,
+      description: newLessonDescription,
+      youtube_id: parsedYoutubeId,
+      level: newLessonLevel,
       duration_min: Math.floor(Math.random() * 10) + 5,
       order_index: 99
     };
     
-    const combined = [...customLessons, nw];
-    setCustomLessons(combined);
-    localStorage.setItem("custom_lessons", JSON.stringify(combined));
-    setShowAdd(false);
-    setNewTitle(""); setNewDesc(""); setNewYt("");
-    toast.success("Custom lesson added!");
+    const combinedCurriculum = [...customLessons, newCurriculumItem];
+    setCustomLessons(combinedCurriculum);
+    localStorage.setItem("custom_lessons", JSON.stringify(combinedCurriculum));
+    
+    // Close modal and clear state
+    setShowAddLessonModal(false);
+    setNewLessonTitle(""); 
+    setNewLessonDescription(""); 
+    setNewLessonYoutubeUrl("");
+    toast.success("Custom lesson added exclusively to your platform!");
   };
 
-  const grouped = useMemo(() => {
-    const g: Record<string, Lesson[]> = { Beginner: [], Intermediate: [], Advanced: [] };
-    const all = [...lessons.filter(l => !hiddenIds.includes(l.id)), ...customLessons];
-    for (const l of all) {
-      if (g[l.level]) g[l.level].push(l);
+  /**
+   * Separates all active lessons (static + custom) into Beginner/Intermediate/Advanced buckets.
+   */
+  const categorizedLessons = useMemo(() => {
+    const categories: Record<string, Lesson[]> = { Beginner: [], Intermediate: [], Advanced: [] };
+    const allAvailableLessons = [...lessons.filter(lesson => !hiddenLessonIds.includes(lesson.id)), ...customLessons];
+    
+    for (const lessonItem of allAvailableLessons) {
+      if (categories[lessonItem.level]) {
+        categories[lessonItem.level].push(lessonItem);
+      }
     }
-    return g;
-  }, [lessons, customLessons, hiddenIds]);
+    return categories;
+  }, [lessons, customLessons, hiddenLessonIds]);
 
-  const activeCount = useMemo(() => Object.values(grouped).flat().length, [grouped]);
-  const completedCount = useMemo(() => Object.keys(progress).filter(id => {
-    const l = Object.values(grouped).flat().find(x => x.id === id);
-    return progress[id].completed && l != null;
-  }).length, [progress, grouped]);
+  const totalActiveLessonCount = useMemo(() => 
+    Object.values(categorizedLessons).flat().length, 
+  [categorizedLessons]);
   
-  const pct = activeCount ? Math.round((completedCount / activeCount) * 100) : 0;
+  const completedLessonCount = useMemo(() => {
+    return Object.keys(progress).filter(lessonId => {
+      const lessonExistsInActive = Object.values(categorizedLessons).flat().find(lesson => lesson.id === lessonId);
+      return progress[lessonId].completed && lessonExistsInActive != null;
+    }).length;
+  }, [progress, categorizedLessons]);
+  
+  const completionPercentage = totalActiveLessonCount ? Math.round((completedLessonCount / totalActiveLessonCount) * 100) : 0;
 
-  const markComplete = async (lesson: Lesson) => {
+  /**
+   * Tracks a lesson as 'completed' in the user's database.
+   */
+  const handleMarkLessonComplete = async (lesson: Lesson) => {
     if (!user) return;
+    
+    // Custom lessons are stored locally for completion toggles for now
     if (lesson.id.startsWith("custom-")) {
-      setProgress(p => ({ ...p, [lesson.id]: { lesson_id: lesson.id, completed: true, position_seconds: 0 } }));
-      toast.success("Marked complete!");
+      setProgress(prevProgress => ({ 
+        ...prevProgress, 
+        [lesson.id]: { lesson_id: lesson.id, completed: true, position_seconds: 0 } 
+      }));
+      toast.success("Lesson marked as complete!");
       return;
     }
-    const { error } = await supabase.from("lesson_progress").upsert(
-      { user_id: user.id, lesson_id: lesson.id, completed: true, position_seconds: 0, updated_at: new Date().toISOString() },
-      { onConflict: "user_id,lesson_id" },
-    );
-    if (error) { toast.error(error.message); return; }
-    toast.success("Marked complete!");
-    refresh();
+    
+    try {
+      await apiFetch("/learn/progress", {
+        method: "POST",
+        body: JSON.stringify({ id: lesson.id, completed: true }),
+      });
+      toast.success("Lesson marked as complete permanently!");
+      refreshLearningProgress();
+    } catch (error: unknown) {
+      toast.error("Failed to mark complete: " + (error as Error).message);
+    }
   };
 
   return (
@@ -140,8 +198,8 @@ const Learn = () => {
           <div>
             <h1 className="font-display text-3xl font-bold">Learn to trade</h1>
             <p className="text-muted-foreground text-sm mt-1">Structured curriculum — go at your own pace.</p>
-            {isAdmin && (
-              <Button onClick={() => setShowAdd(true)} size="sm" variant="outline" className="mt-4 gap-1.5 border-border">
+            {isAdminUser && (
+              <Button onClick={() => setShowAddLessonModal(true)} size="sm" variant="outline" className="mt-4 gap-1.5 border-border">
                 <Plus className="w-3.5 h-3.5"/> Add Custom Lesson
               </Button>
             )}
@@ -150,43 +208,43 @@ const Learn = () => {
             <div className="text-xs text-muted-foreground">Overall progress</div>
             <div className="flex items-center gap-3 mt-1">
               <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div className="h-full bg-gold transition-all" style={{ width: `${pct}%` }} />
+                <div className="h-full bg-gold transition-all" style={{ width: `${completionPercentage}%` }} />
               </div>
-              <span className="font-mono-num text-sm text-gold">{pct}%</span>
+              <span className="font-mono-num text-sm text-gold">{completionPercentage}%</span>
             </div>
-            <div className="text-[11px] text-muted-foreground mt-1">{completedCount} / {activeCount} lessons</div>
+            <div className="text-[11px] text-muted-foreground mt-1">{completedLessonCount} / {totalActiveLessonCount} lessons</div>
           </div>
         </div>
 
         <div className="space-y-10">
-          {LEVELS.map((level) => (
-            <section key={level}>
+          {LEVELS.map((levelName) => (
+            <section key={levelName}>
               <div className="flex items-baseline gap-3 mb-4">
-                <h2 className="font-display text-xl font-bold">{level}</h2>
-                <span className="text-xs text-muted-foreground">{grouped[level]?.length ?? 0} lessons</span>
+                <h2 className="font-display text-xl font-bold">{levelName}</h2>
+                <span className="text-xs text-muted-foreground">{categorizedLessons[levelName]?.length ?? 0} lessons</span>
               </div>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {(grouped[level] ?? []).map((l) => {
-                  const done = progress[l.id]?.completed;
+                {(categorizedLessons[levelName] ?? []).map((lessonItem) => {
+                  const isCompleted = progress[lessonItem.id]?.completed;
                   return (
-                    <div key={l.id} className="rounded-2xl bg-card-grad border border-border/60 p-5 flex flex-col shadow-elevated">
+                    <div key={lessonItem.id} className="rounded-2xl bg-card-grad border border-border/60 p-5 flex flex-col shadow-elevated">
                       <div className="flex items-start gap-2">
-                        {done ? <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" /> : <Circle className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />}
+                        {isCompleted ? <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" /> : <Circle className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />}
                         <div className="flex-1">
-                          <h3 className="font-display font-semibold leading-snug">{l.title}</h3>
-                          <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed line-clamp-2">{l.description}</p>
+                          <h3 className="font-display font-semibold leading-snug">{lessonItem.title}</h3>
+                          <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed line-clamp-2">{lessonItem.description}</p>
                         </div>
                       </div>
                       <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/40">
-                        <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> {l.duration_min} min</span>
+                        <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> {lessonItem.duration_min} min</span>
                         <div className="flex items-center gap-2">
-                          {isAdmin && (
-                            <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={(e) => removeLesson(l.id, e)}>
+                          {isAdminUser && (
+                            <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={(e) => handleRemoveLesson(lessonItem.id, e)}>
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           )}
-                          <Button size="sm" variant={done ? "outline" : "hero"} onClick={() => setActive(l)}>
-                            <PlayCircle className="w-4 h-4" /> {done ? "Rewatch" : "Start"}
+                          <Button size="sm" variant={isCompleted ? "outline" : "hero"} onClick={() => setActive(lessonItem)}>
+                            <PlayCircle className="w-4 h-4" /> {isCompleted ? "Rewatch" : "Start"}
                           </Button>
                         </div>
                       </div>
@@ -200,34 +258,34 @@ const Learn = () => {
       </main>
 
       {/* Add Custom Lesson Modal */}
-      {showAdd && (
-        <div className="fixed inset-0 z-50 bg-black/80 grid place-items-center p-4" onClick={() => setShowAdd(false)}>
+      {showAddLessonModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 grid place-items-center p-4" onClick={() => setShowAddLessonModal(false)}>
           <div className="w-full max-w-md rounded-2xl bg-card border border-border/60 overflow-hidden shadow-elevated" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-3 border-b border-border/60">
               <h3 className="font-display font-semibold">Add Custom Lesson</h3>
-              <button onClick={() => setShowAdd(false)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+              <button onClick={() => setShowAddLessonModal(false)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
-            <form onSubmit={addCustomLesson} className="p-5 space-y-4">
+            <form onSubmit={handleAddCustomLesson} className="p-5 space-y-4">
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Lesson Title</label>
-                <Input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="E.g. Advanced Options Strategies" required />
+                <Input value={newLessonTitle} onChange={e => setNewLessonTitle(e.target.value)} placeholder="E.g. Advanced Options Strategies" required />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Description</label>
-                <Input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="A brief summary..." />
+                <Input value={newLessonDescription} onChange={e => setNewLessonDescription(e.target.value)} placeholder="A brief summary..." />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">YouTube URL or ID</label>
-                <Input value={newYt} onChange={e => setNewYt(e.target.value)} placeholder="https://www.youtube.com/watch?v=..." required />
+                <Input value={newLessonYoutubeUrl} onChange={e => setNewLessonYoutubeUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=..." required />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Difficulty Level</label>
                 <select 
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  value={newLevel} 
-                  onChange={e => setNewLevel(e.target.value as any)}
+                  value={newLessonLevel} 
+                  onChange={e => setNewLessonLevel(e.target.value as any)}
                 >
-                  {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+                  {LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
                 </select>
               </div>
               <Button type="submit" variant="hero" className="w-full">Add Lesson</Button>
@@ -259,7 +317,7 @@ const Learn = () => {
             </div>
             <div className="p-5 flex items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground flex-1">{active.description}</p>
-              <Button variant={progress[active.id]?.completed ? "outline" : "hero"} onClick={() => markComplete(active)}>
+              <Button variant={progress[active.id]?.completed ? "outline" : "hero"} onClick={() => handleMarkLessonComplete(active)}>
                 <CheckCircle2 className="w-4 h-4" /> {progress[active.id]?.completed ? "Completed" : "Mark complete"}
               </Button>
             </div>

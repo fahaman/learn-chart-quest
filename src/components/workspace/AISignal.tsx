@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Brain, Loader2, RefreshCw } from "lucide-react";
 
@@ -11,45 +10,72 @@ type Signal = {
   explanation: string;
 };
 
-function ema(values: number[], period: number): number[] {
-  const k = 2 / (period + 1);
-  const out: number[] = [values[0]];
-  let prev = values[0];
+/**
+ * Calculates the Exponential Moving Average (EMA) of a numeric dataset.
+ */
+function calculateEMA(values: number[], period: number): number[] {
+  const multiplier = 2 / (period + 1);
+  const emaData: number[] = [values[0]];
+  
+  let previousEma = values[0];
+  
   for (let i = 1; i < values.length; i++) {
-    const v = values[i] * k + prev * (1 - k);
-    out.push(v);
-    prev = v;
+    const currentEma = values[i] * multiplier + previousEma * (1 - multiplier);
+    emaData.push(currentEma);
+    previousEma = currentEma;
   }
-  return out;
+  
+  return emaData;
 }
 
-function rsi(values: number[], period = 14): number {
-  if (values.length < period + 1) return 50;
-  let gains = 0, losses = 0;
+/**
+ * Calculates the Relative Strength Index (RSI).
+ */
+function calculateRSI(values: number[], period = 14): number {
+  if (values.length < period + 1) return 50; // Not enough data
+  
+  let totalGains = 0;
+  let totalLosses = 0;
+  
   for (let i = 1; i <= period; i++) {
-    const d = values[i] - values[i - 1];
-    if (d >= 0) gains += d; else losses -= d;
+    const difference = values[i] - values[i - 1];
+    if (difference >= 0) totalGains += difference; 
+    else totalLosses -= difference;
   }
-  let avgG = gains / period, avgL = losses / period;
+  
+  let averageGain = totalGains / period;
+  let averageLoss = totalLosses / period;
+  
   for (let i = period + 1; i < values.length; i++) {
-    const d = values[i] - values[i - 1];
-    const g = d > 0 ? d : 0;
-    const l = d < 0 ? -d : 0;
-    avgG = (avgG * (period - 1) + g) / period;
-    avgL = (avgL * (period - 1) + l) / period;
+    const difference = values[i] - values[i - 1];
+    const currentGain = difference > 0 ? difference : 0;
+    const currentLoss = difference < 0 ? -difference : 0;
+    
+    // Smoothed moving average calculation
+    averageGain = (averageGain * (period - 1) + currentGain) / period;
+    averageLoss = (averageLoss * (period - 1) + currentLoss) / period;
   }
-  if (avgL === 0) return 100;
-  return 100 - 100 / (1 + avgG / avgL);
+  
+  if (averageLoss === 0) return 100;
+  return 100 - 100 / (1 + averageGain / averageLoss);
 }
 
-const generateMockKlines = (sym: string) => {
-  let hash = 0;
-  for (let i = 0; i < sym.length; i++) hash = sym.charCodeAt(i) + ((hash << 5) - hash);
-  const basePrice = Math.abs(hash % 1000) + 15;
-  let currentPrice = basePrice;
-  return Array.from({ length: 200 }, (_, i) => {
-    currentPrice = currentPrice * (1 + (Math.sin(i / 5) * 0.05 + (Math.random() - 0.5) * 0.02));
-    return currentPrice;
+/**
+ * Generates deterministic fake candlestick close data based on the symbol string.
+ * Used exclusively for local offline simulations and fallback mock environments.
+ */
+const generateMockKlines = (symbolCode: string) => {
+  let hashStr = 0;
+  for (let i = 0; i < symbolCode.length; i++) {
+    hashStr = symbolCode.charCodeAt(i) + ((hashStr << 5) - hashStr);
+  }
+  const basePrice = Math.abs(hashStr % 1000) + 15;
+  
+  let currentPriceWalk = basePrice;
+  return Array.from({ length: 200 }, (_, index) => {
+    // Generate a sin wave with some small randomized noise sprinkled in
+    currentPriceWalk = currentPriceWalk * (1 + (Math.sin(index / 5) * 0.05 + (Math.random() - 0.5) * 0.02));
+    return currentPriceWalk;
   });
 };
 
@@ -60,54 +86,72 @@ export const AISignal = ({ symbol }: { symbol: string }) => {
   const load = async () => {
     setLoading(true);
     setSignal(null);
-    try {
-      const { data, error } = await supabase.functions.invoke("ai-signal", { body: { symbol } });
-      if (!error && !data?.error) {
-        setSignal(data as Signal);
-        setLoading(false);
-        return;
-      }
-    } catch {}
 
     // Fallback: Local computation for stocks/unsupported crypto
     setTimeout(() => {
-      const closes = generateMockKlines(symbol);
-      const last = closes[closes.length - 1];
-      const ema20 = ema(closes, 20).pop() || last;
-      const ema50 = ema(closes, 50).pop() || last;
-      const r = rsi(closes);
+      const closingPrices = generateMockKlines(symbol);
+      const latestPrice = closingPrices[closingPrices.length - 1];
       
-      const ema12 = ema(closes, 12);
-      const ema26 = ema(closes, 26);
-      const macdLine = ema12.map((v, i) => v - ema26[i]);
-      const signalLine = ema(macdLine.slice(-50), 9);
-      const m = macdLine[macdLine.length - 1];
-      const sig = signalLine[signalLine.length - 1];
-      const hist = m - sig;
+      const ema20line = calculateEMA(closingPrices, 20).pop() || latestPrice;
+      const ema50line = calculateEMA(closingPrices, 50).pop() || latestPrice;
+      const currentRsi = calculateRSI(closingPrices);
+      
+      // MACD Construction (12, 26, 9)
+      const ema12 = calculateEMA(closingPrices, 12);
+      const ema26 = calculateEMA(closingPrices, 26);
+      const macdSeries = ema12.map((value, idx) => value - ema26[idx]);
+      const signalSeries = calculateEMA(macdSeries.slice(-50), 9);
+      
+      const macdValue = macdSeries[macdSeries.length - 1];
+      const macdSignalValue = signalSeries[signalSeries.length - 1];
+      const macdHistogram = macdValue - macdSignalValue;
 
-      let trend: "bullish" | "bearish" | "sideways" = "sideways";
-      if (ema20 > ema50 && last > ema20) trend = "bullish";
-      else if (ema20 < ema50 && last < ema20) trend = "bearish";
+      let currentTrend: "bullish" | "bearish" | "sideways" = "sideways";
+      if (ema20line > ema50line && latestPrice > ema20line) currentTrend = "bullish";
+      else if (ema20line < ema50line && latestPrice < ema20line) currentTrend = "bearish";
 
-      let bias: "BUY" | "SELL" | "HOLD" = "HOLD";
-      let confidence = 50;
-      if (trend === "bullish" && r < 70 && hist > 0) { bias = "BUY"; confidence = 65 + Math.random() * 20; }
-      else if (trend === "bearish" && r > 30 && hist < 0) { bias = "SELL"; confidence = 65 + Math.random() * 20; }
-      else if (r >= 70) { bias = "SELL"; confidence = 60; }
-      else if (r <= 30) { bias = "BUY"; confidence = 60; }
+      let generatedBias: "BUY" | "SELL" | "HOLD" = "HOLD";
+      let generatedConfidence = 50;
+      
+      if (currentTrend === "bullish" && currentRsi < 70 && macdHistogram > 0) { 
+        generatedBias = "BUY"; 
+        generatedConfidence = 65 + Math.random() * 20; 
+      }
+      else if (currentTrend === "bearish" && currentRsi > 30 && macdHistogram < 0) { 
+        generatedBias = "SELL"; 
+        generatedConfidence = 65 + Math.random() * 20; 
+      }
+      else if (currentRsi >= 70) { 
+        generatedBias = "SELL"; 
+        generatedConfidence = 60; 
+      }
+      else if (currentRsi <= 30) { 
+        generatedBias = "BUY"; 
+        generatedConfidence = 60; 
+      }
 
-      let explanation = `Trend is ${trend}. RSI indicates ${r > 70 ? 'overbought' : r < 30 ? 'oversold' : 'neutral'} conditions, with MACD histogram at ${hist.toFixed(2)}. Evaluated action: ${bias}.`;
+      const explanationString = `Trend is ${currentTrend}. RSI indicates ${currentRsi > 70 ? 'overbought' : currentRsi < 30 ? 'oversold' : 'neutral'} conditions, with MACD histogram at ${macdHistogram.toFixed(2)}. Evaluated action: ${generatedBias}.`;
 
       setSignal({
-        symbol, bias, confidence: Math.round(confidence),
-        indicators: { price: last, rsi: +r.toFixed(1), ema20: +ema20.toFixed(2), ema50: +ema50.toFixed(2), macd: +m.toFixed(2), hist: +hist.toFixed(2), trend },
-        explanation
+        symbol, 
+        bias: generatedBias, 
+        confidence: Math.round(generatedConfidence),
+        indicators: { 
+          price: latestPrice, 
+          rsi: +currentRsi.toFixed(1), 
+          ema20: +ema20line.toFixed(2), 
+          ema50: +ema50line.toFixed(2), 
+          macd: +macdValue.toFixed(2), 
+          hist: +macdHistogram.toFixed(2), 
+          trend: currentTrend 
+        },
+        explanation: explanationString
       });
       setLoading(false);
     }, 600);
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [symbol]);
+  useEffect(() => { load();   }, [symbol]);
 
   const biasStyles =
     signal?.bias === "BUY"
