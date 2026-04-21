@@ -7,7 +7,7 @@ import tradeRoutes from "./routes/trade.js";
 import adminRoutes from "./routes/admin.js";
 import learnRoutes from "./routes/learn.js";
 
-dotenv.config({ path: "../.env" });
+dotenv.config(); // Loads .env from the project root directory
 
 connectDB();
 
@@ -22,6 +22,12 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/learn", learnRoutes);
 
 app.get("/", (req, res) => res.send("API is running..."));
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: "Internal Server Error" });
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

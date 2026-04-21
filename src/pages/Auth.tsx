@@ -73,6 +73,13 @@ const Auth = () => {
             <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
               <Input id="password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+              {mode === "signin" && (
+                <div className="flex justify-end">
+                  <Link to="/forgot-password" className="text-xs text-muted-foreground hover:text-gold transition-colors">
+                    Forgot password?
+                  </Link>
+                </div>
+              )}
             </div>
             <Button type="submit" variant="hero" className="w-full" size="lg" disabled={loading}>
               {loading ? <Loader2 className="animate-spin" /> : mode === "signup" ? "Create account" : "Sign in"}
