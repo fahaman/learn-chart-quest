@@ -13,9 +13,9 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Plus, Search, Trash2, TrendingDown, TrendingUp, Wallet, RefreshCw } from "lucide-react";
 
-type Position = { id: string; symbol: string; quantity: number; avg_price: number };
-type Trade = { id: string; symbol: string; side: string; quantity: number; price: number; total: number; created_at: string };
-type Watch = { id: string; symbol: string };
+type Position = { _id: string; symbol: string; quantity: number; avg_price: number };
+type Trade = { _id: string; symbol: string; side: string; quantity: number; price: number; total: number; created_at: string };
+type Watch = { _id: string; symbol: string };
 
 /**
  * Formats a number as a standard USD currency string.
@@ -219,11 +219,11 @@ const Workspace = () => {
           <div className="space-y-1">
             {watchlist.map((watchlistItem) => (
               <WatchRow 
-                key={watchlistItem.id} 
+                key={watchlistItem._id} 
                 item={watchlistItem} 
                 active={watchlistItem.symbol === activeSymbol} 
                 onSelect={() => setActiveSymbol(watchlistItem.symbol)} 
-                onRemove={() => handleRemoveFromWatchlist(watchlistItem.id)} 
+                onRemove={() => handleRemoveFromWatchlist(watchlistItem._id)} 
               />
             ))}
             {watchlist.length === 0 && <div className="text-xs text-muted-foreground">Add a Binance pair to start.</div>}
@@ -319,7 +319,7 @@ const Workspace = () => {
                 {positions.map((p) => {
                   const px = p.symbol === activeSymbol && livePrice ? livePrice : p.avg_price;
                   return (
-                    <tr key={p.id} className="border-t border-border/60 hover:bg-muted/20 cursor-pointer" onClick={() => setActiveSymbol(p.symbol)}>
+                    <tr key={p._id} className="border-t border-border/60 hover:bg-muted/20 cursor-pointer" onClick={() => setActiveSymbol(p.symbol)}>
                       <td className="p-2 font-mono">{p.symbol}</td>
                       <td className="p-2 text-right font-mono-num">{formatNumber(p.quantity, 4)}</td>
                       <td className="p-2 text-right font-mono-num">{formatMoney(p.avg_price)}</td>
@@ -341,7 +341,7 @@ const Workspace = () => {
               </thead>
               <tbody>
                 {trades.map((t) => (
-                  <tr key={t.id} className="border-t border-border/60">
+                  <tr key={t._id} className="border-t border-border/60">
                     <td className="p-2 text-xs text-muted-foreground">{new Date(t.created_at).toLocaleTimeString()}</td>
                     <td className="p-2 font-mono">{t.symbol}</td>
                     <td className={`p-2 font-semibold text-xs ${t.side === "BUY" ? "text-success" : "text-destructive"}`}>{t.side}</td>

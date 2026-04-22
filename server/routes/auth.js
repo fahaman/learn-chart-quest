@@ -7,18 +7,78 @@ import { protect } from "../middleware/authMiddleware.js";
 const router = express.Router();
 const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET || "learnchart_secret_123", { expiresIn: "30d" });
 
-router.post("/register", async (req, res) => {
-  const { email, password } = req.body;
-  try {
-    const userExists = await User.findOne({ email });
-    if (userExists) return res.status(400).json({ error: "User already exists" });
+// Temporary in-memory store for OTPs (In production, use Redis or a DB)
+const otpStore = new Map();
 
-    const user = await User.create({ email, password });
+router.post("/send-otp", async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) return res.status(400).json({ error: "Phone number is required" });
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  otpStore.set(phone, { otp, expires: Date.now() + 300000 }); // 5 min expiry
+
+  console.log("-----------------------");
+  console.log(`OTP for ${phone}: ${otp}`);
+  console.log("-----------------------");
+
+  res.json({ message: "OTP sent successfully (Check server console)" });
+});
+
+router.post("/register", async (req, res) => {
+  const { name, username, email, phone, password, otp } = req.body;
+  
+  // Validations
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+  const usernameRegex = /^[a-zA-Z]+$/;
+  const nameRegex = /^[a-zA-Z\s]+$/;
+  const gmailRegex = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
+
+  if (!name || !username || !email || !phone || !password || !otp) {
+    return res.status(400).json({ error: "All fields including OTP are required" });
+  }
+
+  // Verify OTP
+  const stored = otpStore.get(phone);
+  if (!stored || stored.otp !== otp || stored.expires < Date.now()) {
+    return res.status(400).json({ error: "Invalid or expired OTP" });
+  }
+  otpStore.delete(phone); // Clear OTP after use
+
+  if (name.length > 50 || !nameRegex.test(name)) {
+    return res.status(400).json({ error: "Name should only contain letters and be max 50 characters" });
+  }
+
+  if (!usernameRegex.test(username)) {
+    return res.status(400).json({ error: "Username should only contain letters (no numbers or symbols)" });
+  }
+
+  if (!gmailRegex.test(email)) {
+    return res.status(400).json({ error: "Please provide a valid Gmail address (@gmail.com)" });
+  }
+
+  if (!passwordRegex.test(password)) {
+    return res.status(400).json({ error: "Password must be at least 8 characters long and contain at least one uppercase letter and one number" });
+  }
+
+  try {
+    const userExists = await User.findOne({ $or: [{ email }, { username }] });
+    if (userExists) {
+      if (userExists.email === email) {
+        return res.status(400).json({ error: "Email already registered" });
+      }
+      return res.status(400).json({ error: "Username already taken" });
+    }
+
+    const user = await User.create({ name, username, email, phone, password });
     if (user) {
       res.status(201).json({
         id: user._id,
+        name: user.name,
+        username: user.username,
         email: user.email,
+        phone: user.phone,
         cash_balance: user.cash_balance,
+        role: user.role,
         token: generateToken(user._id),
       });
     } else {
@@ -30,14 +90,19 @@ router.post("/register", async (req, res) => {
 });
 
 router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+  let { email, password } = req.body;
+  email = email?.trim();
   try {
     const user = await User.findOne({ email });
     if (user && (await user.matchPassword(password))) {
       res.json({
         id: user._id,
+        name: user.name,
+        username: user.username,
         email: user.email,
+        phone: user.phone,
         cash_balance: user.cash_balance,
+        role: user.role,
         token: generateToken(user._id),
       });
     } else {
@@ -51,8 +116,12 @@ router.post("/login", async (req, res) => {
 router.get("/me", protect, async (req, res) => {
   res.json({
     id: req.user._id,
+    name: req.user.name,
+    username: req.user.username,
     email: req.user.email,
+    phone: req.user.phone,
     cash_balance: req.user.cash_balance,
+    role: req.user.role,
   });
 });
 

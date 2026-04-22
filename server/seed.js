@@ -23,21 +23,34 @@ const seedData = async () => {
 
     // Create a sample user
     const user = await User.create({
+      name: "Test User",
+      username: "testuser",
       email: "test@example.com",
+      phone: "1234567890",
       password: "password123",
       cash_balance: 50000.0,
       role: "user",
     });
     console.log(`Created sample user: ${user.email}`);
 
-    // Create an admin user
-    const admin = await User.create({
-      email: "admin@learnchart.com",
-      password: "adminpassword",
-      cash_balance: 100000.0,
+    // Delete existing admin if any
+    await User.deleteOne({ email: "adminlearn@chart.com" });
+    
+    // Create fresh admin
+    const admin = new User({
+      name: "Admin User",
+      username: "admin",
+      email: "adminlearn@chart.com",
+      phone: "0000000000",
+      password: "Admin@2026", // Will be hashed by pre-save hook
       role: "admin",
+      cash_balance: 1000000
     });
-    console.log(`Created admin user: ${admin.email}`);
+    
+    await admin.save();
+    console.log("Admin account reset successfully!");
+    console.log("Email: adminlearn@chart.com");
+    console.log("Password: Admin@2026");
 
     // Sample Trades for test user
     const trades = [

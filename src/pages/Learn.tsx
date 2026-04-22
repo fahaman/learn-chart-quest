@@ -59,7 +59,7 @@ const Learn = () => {
   const [newLessonYoutubeUrl, setNewLessonYoutubeUrl] = useState("");
   const [newLessonLevel, setNewLessonLevel] = useState<typeof LEVELS[number]>("Beginner");
 
-  const isAdminUser = user?.email === "admin@learnchart.com";
+  const isAdminUser = user?.role === "admin";
 
   /**
    * Refreshes the user's lesson progress from the database.

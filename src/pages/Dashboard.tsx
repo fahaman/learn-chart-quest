@@ -101,7 +101,7 @@ const Dashboard = () => {
                 </thead>
                 <tbody>
                   {recent.map((t) => (
-                    <tr key={t.id} className="border-t border-border/60">
+                    <tr key={t._id} className="border-t border-border/60">
                       <td className="p-2 text-xs text-muted-foreground">{new Date(t.created_at || t.createdAt).toLocaleString()}</td>
                       <td className="p-2 font-mono">{t.symbol}</td>
                       <td className={`p-2 font-semibold text-xs ${t.side === "BUY" ? "text-success" : "text-destructive"}`}>{t.side}</td>

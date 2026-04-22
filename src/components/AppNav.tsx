@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { BarChart3, GraduationCap, LayoutDashboard, LineChart, LogOut, Activity } from "lucide-react";
+import { BarChart3, GraduationCap, LayoutDashboard, LineChart, LogOut, Activity, UserCircle } from "lucide-react";
 
 const items = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -14,7 +14,7 @@ export const AppNav = () => {
   const navigate = useNavigate();
   const loc = useLocation();
 
-  const isAdmin = user?.email === "admin@learnchart.com";
+  const isAdmin = user?.role === "admin";
   
   const navItems = isAdmin ? [...items, { to: "/admin", label: "Admin", icon: Activity }] : items;
 
@@ -34,7 +34,10 @@ export const AppNav = () => {
           );
         })}
       </nav>
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-2">
+        <Link to="/profile" className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition ${loc.pathname === "/profile" ? "bg-primary/10 text-gold" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"}`}>
+          <UserCircle className="w-4 h-4" /> <span className="hidden sm:inline">Profile</span>
+        </Link>
         <Button size="sm" variant="ghost" onClick={async () => { await signOut(); navigate("/"); }}><LogOut className="w-4 h-4" /></Button>
       </div>
     </header>

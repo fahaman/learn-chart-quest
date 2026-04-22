@@ -9,6 +9,17 @@ const userSchema = mongoose.Schema(
       unique: true,
       lowercase: true,
     },
+    username: {
+      type: String,
+      unique: true,
+      sparse: true, // Allow multiple nulls if not provided
+    },
+    name: {
+      type: String,
+    },
+    phone: {
+      type: String,
+    },
     password: {
       type: String,
       required: true,
