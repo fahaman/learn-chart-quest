@@ -1,6 +1,3 @@
-# Welcome to your My project LearnChart
-
-
+# Welcome to your Lovable project
 
 TODO: Document your project here
-
