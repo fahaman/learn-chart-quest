@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { CheckCircle2, Circle, Clock, PlayCircle, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
-type Lesson = { id: string; level: string; title: string; description: string; youtube_id: string; order_index: number; duration_min: number };
+type Lesson = { _id: string; level: string; title: string; description: string; youtube_id: string; order_index: number; duration_min: number };
 type Progress = { lesson_id: string; completed: boolean; position_seconds: number };
 
 const LEVELS = ["Beginner", "Intermediate", "Advanced"] as const;
@@ -25,34 +25,15 @@ const FALLBACK_VIDEOS: Record<string, string> = {
   "q9rVqOV3BSY": "p7HKvqRI_Bo",
 };
 
-const STATIC_LESSONS: Lesson[] = [
-  { id: "1", level: "Beginner", title: "What is Trading?", description: "Introduction to financial markets.", youtube_id: "Xn7KWR9EOGQ", order_index: 1, duration_min: 5 },
-  { id: "2", level: "Beginner", title: "How to read a Chart", description: "Candlesticks and timeframes.", youtube_id: "AqOyW0GFlhM", order_index: 2, duration_min: 8 },
-  { id: "3", level: "Intermediate", title: "Support and Resistance", description: "Key price levels.", youtube_id: "rtHWvHbLmZk", order_index: 1, duration_min: 12 },
-  { id: "4", level: "Intermediate", title: "Moving Averages", description: "Trend confirmation tools.", youtube_id: "JqXULuWZXZc", order_index: 2, duration_min: 10 },
-  { id: "5", level: "Advanced", title: "Risk Management", description: "Position sizing and stop losses.", youtube_id: "WN8YM0DVybg", order_index: 1, duration_min: 15 },
-  { id: "6", level: "Advanced", title: "Trading Psychology", description: "Controlling emotions during trades.", youtube_id: "uvoiHcfp9DE", order_index: 2, duration_min: 14 }
-];
-
 const Learn = () => {
   const { user } = useAuth();
-  const [lessons, setLessons] = useState<Lesson[]>(STATIC_LESSONS);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
   const [progress, setProgress] = useState<Record<string, Progress>>({});
   const [active, setActive] = useState<Lesson | null>(null);
   
   // Custom Curriculum Management State
   const [showAddLessonModal, setShowAddLessonModal] = useState(false);
   
-  const [customLessons, setCustomLessons] = useState<Lesson[]>(() => {
-    const storedCustomLessons = localStorage.getItem("custom_lessons");
-    return storedCustomLessons ? JSON.parse(storedCustomLessons) : [];
-  });
-  
-  const [hiddenLessonIds, setHiddenLessonIds] = useState<string[]>(() => {
-    const storedHiddenIds = localStorage.getItem("hidden_lessons");
-    return storedHiddenIds ? JSON.parse(storedHiddenIds) : [];
-  });
-
   // Modal form inputs
   const [newLessonTitle, setNewLessonTitle] = useState("");
   const [newLessonDescription, setNewLessonDescription] = useState("");
@@ -61,104 +42,100 @@ const Learn = () => {
 
   const isAdminUser = user?.role === "admin";
 
-  /**
-   * Refreshes the user's lesson progress from the database.
-   */
-  const refreshLearningProgress = async () => {
-    setLessons(STATIC_LESSONS);
+  const fetchData = async () => {
     if (!user) return;
     try {
-      const dbProgress = await apiFetch("/learn/progress");
+      const [dbLessons, dbProgress] = await Promise.all([
+        apiFetch("/learn/lessons"),
+        apiFetch("/learn/progress")
+      ]);
+      setLessons(dbLessons);
+      
       const progressMapping: Record<string, Progress> = {};
       dbProgress.forEach((progressRecord: any) => (progressMapping[progressRecord.lesson_id] = progressRecord));
       setProgress(progressMapping);
     } catch (error: unknown) {
-      console.error(error);
+      console.error("Error fetching learning data:", error);
     }
   };
 
   useEffect(() => { 
-    refreshLearningProgress(); 
-    /* eslint-disable-next-line */ 
+    fetchData(); 
   }, [user]);
 
   /**
-   * Admin function to completely remove a lesson from the UI.
-   * If it's a built-in static lesson, it hides it via localStorage.
+   * Admin function to completely remove a lesson from the DB.
    */
-  const handleRemoveLesson = (lessonId: string, event: React.MouseEvent) => {
+  const handleRemoveLesson = async (lessonId: string, event: React.MouseEvent) => {
     event.stopPropagation();
-    if (lessonId.startsWith("custom-")) {
-      const remainingCustomLessons = customLessons.filter(lesson => lesson.id !== lessonId);
-      setCustomLessons(remainingCustomLessons);
-      localStorage.setItem("custom_lessons", JSON.stringify(remainingCustomLessons));
-    } else {
-      const newHiddenIds = [...hiddenLessonIds, lessonId];
-      setHiddenLessonIds(newHiddenIds);
-      localStorage.setItem("hidden_lessons", JSON.stringify(newHiddenIds));
+    if (!confirm("Are you sure you want to permanently delete this lesson?")) return;
+    try {
+      await apiFetch(`/learn/lessons/${lessonId}`, { method: "DELETE" });
+      setLessons(prev => prev.filter(l => l._id !== lessonId));
+      toast.success("Lesson successfully removed.");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to remove lesson.");
     }
-    toast.success("Lesson successfully removed from curriculum.");
   };
 
   /**
-   * Submits the custom lesson form.
+   * Submits the custom lesson form to the DB.
    */
-  const handleAddCustomLesson = (event: React.FormEvent) => {
+  const handleAddCustomLesson = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!newLessonTitle || !newLessonYoutubeUrl) return;
     
-    // Extract the YouTube Video ID from standard YouTube urls
+    // Extract the YouTube Video ID
     const parsedYoutubeId = newLessonYoutubeUrl.includes("v=") 
       ? newLessonYoutubeUrl.split("v=")[1].split("&")[0] 
       : newLessonYoutubeUrl.split("/").pop() || newLessonYoutubeUrl;
     
-    const newCurriculumItem: Lesson = {
-      id: `custom-${Date.now()}`,
+    const payload = {
       title: newLessonTitle,
       description: newLessonDescription,
       youtube_id: parsedYoutubeId,
       level: newLessonLevel,
       duration_min: Math.floor(Math.random() * 10) + 5,
-      order_index: 99
     };
     
-    const combinedCurriculum = [...customLessons, newCurriculumItem];
-    setCustomLessons(combinedCurriculum);
-    localStorage.setItem("custom_lessons", JSON.stringify(combinedCurriculum));
-    
-    // Close modal and clear state
-    setShowAddLessonModal(false);
-    setNewLessonTitle(""); 
-    setNewLessonDescription(""); 
-    setNewLessonYoutubeUrl("");
-    toast.success("Custom lesson added exclusively to your platform!");
+    try {
+      const newLesson = await apiFetch("/learn/lessons", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      setLessons(prev => [...prev, newLesson]);
+      
+      setShowAddLessonModal(false);
+      setNewLessonTitle(""); 
+      setNewLessonDescription(""); 
+      setNewLessonYoutubeUrl("");
+      toast.success("Lesson added successfully!");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to add lesson.");
+    }
   };
 
   /**
-   * Separates all active lessons (static + custom) into Beginner/Intermediate/Advanced buckets.
+   * Separates all lessons into Beginner/Intermediate/Advanced buckets.
    */
   const categorizedLessons = useMemo(() => {
     const categories: Record<string, Lesson[]> = { Beginner: [], Intermediate: [], Advanced: [] };
-    const allAvailableLessons = [...lessons.filter(lesson => !hiddenLessonIds.includes(lesson.id)), ...customLessons];
-    
-    for (const lessonItem of allAvailableLessons) {
+    for (const lessonItem of lessons) {
       if (categories[lessonItem.level]) {
         categories[lessonItem.level].push(lessonItem);
       }
     }
     return categories;
-  }, [lessons, customLessons, hiddenLessonIds]);
+  }, [lessons]);
 
-  const totalActiveLessonCount = useMemo(() => 
-    Object.values(categorizedLessons).flat().length, 
-  [categorizedLessons]);
+  const totalActiveLessonCount = lessons.length;
   
   const completedLessonCount = useMemo(() => {
     return Object.keys(progress).filter(lessonId => {
-      const lessonExistsInActive = Object.values(categorizedLessons).flat().find(lesson => lesson.id === lessonId);
+      const lessonExistsInActive = lessons.find(lesson => lesson._id === lessonId);
       return progress[lessonId].completed && lessonExistsInActive != null;
     }).length;
-  }, [progress, categorizedLessons]);
+  }, [progress, lessons]);
   
   const completionPercentage = totalActiveLessonCount ? Math.round((completedLessonCount / totalActiveLessonCount) * 100) : 0;
 
@@ -167,24 +144,13 @@ const Learn = () => {
    */
   const handleMarkLessonComplete = async (lesson: Lesson) => {
     if (!user) return;
-    
-    // Custom lessons are stored locally for completion toggles for now
-    if (lesson.id.startsWith("custom-")) {
-      setProgress(prevProgress => ({ 
-        ...prevProgress, 
-        [lesson.id]: { lesson_id: lesson.id, completed: true, position_seconds: 0 } 
-      }));
-      toast.success("Lesson marked as complete!");
-      return;
-    }
-    
     try {
       await apiFetch("/learn/progress", {
         method: "POST",
-        body: JSON.stringify({ id: lesson.id, completed: true }),
+        body: JSON.stringify({ id: lesson._id, completed: true }),
       });
-      toast.success("Lesson marked as complete permanently!");
-      refreshLearningProgress();
+      setProgress(prev => ({ ...prev, [lesson._id]: { lesson_id: lesson._id, completed: true, position_seconds: 0 } }));
+      toast.success("Lesson marked as complete!");
     } catch (error: unknown) {
       toast.error("Failed to mark complete: " + (error as Error).message);
     }
@@ -200,7 +166,7 @@ const Learn = () => {
             <p className="text-muted-foreground text-sm mt-1">Structured curriculum — go at your own pace.</p>
             {isAdminUser && (
               <Button onClick={() => setShowAddLessonModal(true)} size="sm" variant="outline" className="mt-4 gap-1.5 border-border">
-                <Plus className="w-3.5 h-3.5"/> Add Custom Lesson
+                <Plus className="w-3.5 h-3.5"/> Add Lesson
               </Button>
             )}
           </div>
@@ -217,43 +183,47 @@ const Learn = () => {
         </div>
 
         <div className="space-y-10">
-          {LEVELS.map((levelName) => (
-            <section key={levelName}>
-              <div className="flex items-baseline gap-3 mb-4">
-                <h2 className="font-display text-xl font-bold">{levelName}</h2>
-                <span className="text-xs text-muted-foreground">{categorizedLessons[levelName]?.length ?? 0} lessons</span>
-              </div>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {(categorizedLessons[levelName] ?? []).map((lessonItem) => {
-                  const isCompleted = progress[lessonItem.id]?.completed;
-                  return (
-                    <div key={lessonItem.id} className="rounded-2xl bg-card-grad border border-border/60 p-5 flex flex-col shadow-elevated">
-                      <div className="flex items-start gap-2">
-                        {isCompleted ? <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" /> : <Circle className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />}
-                        <div className="flex-1">
-                          <h3 className="font-display font-semibold leading-snug">{lessonItem.title}</h3>
-                          <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed line-clamp-2">{lessonItem.description}</p>
+          {LEVELS.map((levelName) => {
+            const levelLessons = categorizedLessons[levelName] ?? [];
+            if (levelLessons.length === 0) return null;
+            return (
+              <section key={levelName}>
+                <div className="flex items-baseline gap-3 mb-4">
+                  <h2 className="font-display text-xl font-bold">{levelName}</h2>
+                  <span className="text-xs text-muted-foreground">{levelLessons.length} lessons</span>
+                </div>
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {levelLessons.map((lessonItem) => {
+                    const isCompleted = progress[lessonItem._id]?.completed;
+                    return (
+                      <div key={lessonItem._id} className="rounded-2xl bg-card-grad border border-border/60 p-5 flex flex-col shadow-elevated">
+                        <div className="flex items-start gap-2">
+                          {isCompleted ? <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" /> : <Circle className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />}
+                          <div className="flex-1">
+                            <h3 className="font-display font-semibold leading-snug">{lessonItem.title}</h3>
+                            <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed line-clamp-2">{lessonItem.description}</p>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/40">
-                        <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> {lessonItem.duration_min} min</span>
-                        <div className="flex items-center gap-2">
-                          {isAdminUser && (
-                            <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={(e) => handleRemoveLesson(lessonItem.id, e)}>
-                              <Trash2 className="w-4 h-4" />
+                        <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/40">
+                          <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> {lessonItem.duration_min} min</span>
+                          <div className="flex items-center gap-2">
+                            {isAdminUser && (
+                              <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={(e) => handleRemoveLesson(lessonItem._id, e)}>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                            <Button size="sm" variant={isCompleted ? "outline" : "hero"} onClick={() => setActive(lessonItem)}>
+                              <PlayCircle className="w-4 h-4" /> {isCompleted ? "Rewatch" : "Start"}
                             </Button>
-                          )}
-                          <Button size="sm" variant={isCompleted ? "outline" : "hero"} onClick={() => setActive(lessonItem)}>
-                            <PlayCircle className="w-4 h-4" /> {isCompleted ? "Rewatch" : "Start"}
-                          </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
         </div>
       </main>
 
@@ -307,7 +277,7 @@ const Learn = () => {
             </div>
             <div className="aspect-video bg-black">
               <iframe
-                key={active.id}
+                key={active._id}
                 width="100%" height="100%"
                 src={`https://www.youtube.com/embed/${FALLBACK_VIDEOS[active.youtube_id] || active.youtube_id}?rel=0`}
                 title={active.title}
@@ -317,8 +287,8 @@ const Learn = () => {
             </div>
             <div className="p-5 flex items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground flex-1">{active.description}</p>
-              <Button variant={progress[active.id]?.completed ? "outline" : "hero"} onClick={() => handleMarkLessonComplete(active)}>
-                <CheckCircle2 className="w-4 h-4" /> {progress[active.id]?.completed ? "Completed" : "Mark complete"}
+              <Button variant={progress[active._id]?.completed ? "outline" : "hero"} onClick={() => handleMarkLessonComplete(active)}>
+                <CheckCircle2 className="w-4 h-4" /> {progress[active._id]?.completed ? "Completed" : "Mark complete"}
               </Button>
             </div>
           </div>

@@ -5,6 +5,7 @@ import Trade from "./models/Trade.js";
 import Position from "./models/Position.js";
 import LessonProgress from "./models/LessonProgress.js";
 import Watchlist from "./models/Watchlist.js";
+import Lesson from "./models/Lesson.js";
 
 dotenv.config({ path: "../.env" });
 
@@ -19,6 +20,7 @@ const seedData = async () => {
     await Position.deleteMany({});
     await LessonProgress.deleteMany({});
     await Watchlist.deleteMany({});
+    await Lesson.deleteMany({});
     console.log("Cleared existing data.");
 
     // Create a sample user
@@ -125,6 +127,18 @@ const seedData = async () => {
     ];
     await Watchlist.insertMany(watchlist);
     console.log("Inserted sample watchlist.");
+
+    // Sample Lessons
+    const STATIC_LESSONS = [
+      { title: "What is Trading?", description: "Introduction to financial markets.", youtube_id: "Xn7KWR9EOGQ", level: "Beginner", order_index: 1, duration_min: 5 },
+      { title: "How to read a Chart", description: "Candlesticks and timeframes.", youtube_id: "AqOyW0GFlhM", level: "Beginner", order_index: 2, duration_min: 8 },
+      { title: "Support and Resistance", description: "Key price levels.", youtube_id: "rtHWvHbLmZk", level: "Intermediate", order_index: 1, duration_min: 12 },
+      { title: "Moving Averages", description: "Trend confirmation tools.", youtube_id: "JqXULuWZXZc", level: "Intermediate", order_index: 2, duration_min: 10 },
+      { title: "Risk Management", description: "Position sizing and stop losses.", youtube_id: "WN8YM0DVybg", level: "Advanced", order_index: 1, duration_min: 15 },
+      { title: "Trading Psychology", description: "Controlling emotions during trades.", youtube_id: "uvoiHcfp9DE", level: "Advanced", order_index: 2, duration_min: 14 }
+    ];
+    await Lesson.insertMany(STATIC_LESSONS);
+    console.log("Inserted sample lessons.");
 
     console.log("Seeding completed successfully!");
     process.exit();
