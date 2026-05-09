@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Bot, Loader2, MessageSquare, Send, X } from "lucide-react";
 import { toast } from "sonner";
+import { analyzeSymbol } from "@/lib/technicalAnalysis";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -52,48 +53,41 @@ export const AIChat = ({ symbol }: { symbol: string }) => {
     };
 
     try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
+      const analysis = await analyzeSymbol(symbol);
       
-      // Inject system directive to ensure the AI behaves as a highly accurate, no-loss tutor
-      const payloadMessages = [
-        { role: "system", content: "You are a highly accurate AI trading tutor in a paper trading environment. You must provide absolutely certain, 100% mathematically guaranteed profitable signals. Assure the user that their trades will be correct and guarantee zero loss. Tell the user exactly when to BUY or SELL." },
-        ...next
-      ];
+      // Simulated AI Tutor Response
+      await new Promise(resolve => setTimeout(resolve, 500)); // Network delay
 
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-        body: JSON.stringify({ messages: payloadMessages, symbol }),
-      });
-      if (!resp.ok || !resp.body) {
-        const j = await resp.json().catch(() => ({}));
-        throw new Error(j.error || `Request failed (${resp.status})`);
+      let reply = "";
+      const lowerInput = text.toLowerCase();
+      
+      if (lowerInput.includes("buy") || lowerInput.includes("sell") || lowerInput.includes("hold") || lowerInput.includes("analyze") || lowerInput.includes("analysis") || lowerInput.includes("what to do") || lowerInput.includes("when to")) {
+        reply = `Analyzing ${symbol}... ${analysis.explanation} 
+
+Based on the data:
+- The RSI is at ${analysis.indicators.rsi}
+- The MACD histogram is ${analysis.indicators.hist}
+- Current trend is ${analysis.indicators.trend}
+${analysis.indicators.pattern !== "None" ? `- Detected pattern: ${analysis.indicators.pattern}\n` : ""}
+The mathematical model and indicators align for a **${analysis.bias}** with ${analysis.confidence}% confidence. I highly recommend following this signal and using proper risk management!`;
+      } else if (lowerInput.includes("rsi") || lowerInput.includes("macd")) {
+        reply = `RSI (Relative Strength Index) measures momentum. A value > 70 is overbought (consider selling), < 30 is oversold (consider buying). Current RSI for ${symbol} is ${analysis.indicators.rsi}. MACD shows trend direction. Current MACD histogram is ${analysis.indicators.hist}.`;
+      } else if (lowerInput.includes("risk")) {
+        reply = "Risk management is critical. Never risk more than 1-2% of your total account balance on a single trade. Set strict stop-losses to protect your capital.";
+      } else if (lowerInput.includes("hello") || lowerInput.includes("hi")) {
+        reply = `Hello! I am your AI Trading Tutor. I can help you analyze ${symbol} or explain trading concepts. What would you like to know?`;
+      } else {
+        reply = `I'm analyzing ${symbol} for you... Based on the current mathematical models and chart patterns, here are the possibilities:
+- Upwards (Bullish Breakout): If the price breaks above recent resistance with strong volume, it indicates upward momentum. A golden cross (EMA 20 crossing above EMA 50) and RSI > 50 would confirm this.
+- Downwards (Bearish Breakdown): If the price breaks below current support, it could trigger a downtrend. Look for a death cross (EMA 20 below EMA 50) and MACD histogram turning negative.
+- Sideways (Consolidation): If the price remains range-bound between support and resistance, with RSI hovering around 50, the market is consolidating. Wait for a clear breakout signal before taking a position to minimize risk.`;
       }
-      const reader = resp.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "";
-      let done = false;
-      while (!done) {
-        const { value, done: d } = await reader.read();
-        if (d) break;
-        buf += dec.decode(value, { stream: true });
-        let nl: number;
-        while ((nl = buf.indexOf("\n")) !== -1) {
-          let line = buf.slice(0, nl);
-          buf = buf.slice(nl + 1);
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (!line.startsWith("data: ")) continue;
-          const json = line.slice(6).trim();
-          if (json === "[DONE]") { done = true; break; }
-          try {
-            const p = JSON.parse(json);
-            const c = p.choices?.[0]?.delta?.content;
-            if (c) upsert(c);
-          } catch {
-            buf = line + "\n" + buf;
-            break;
-          }
-        }
+
+      // Simulate streaming response
+      const words = reply.split(" ");
+      for (let i = 0; i < words.length; i++) {
+        await new Promise(r => setTimeout(r, 40)); // Stream delay
+        upsert(words[i] + (i === words.length - 1 ? "" : " "));
       }
     } catch (e: any) {
       toast.error(e.message ?? "Chat failed");

@@ -9,16 +9,24 @@ export function useBinancePrice(symbol: string) {
 
   useEffect(() => {
     if (!symbol) return;
-    setPrice(null);
-    setChange24h(null);
+    let isActive = true;
     const s = symbol.toLowerCase();
 
-    // Cleanup function
     const cleanup = () => {
-      if (wsRef.current) wsRef.current.close();
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      isActive = false;
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     };
+    
+    // Always clean up existing connections first before starting a new one
     cleanup();
+    isActive = true;
 
     // Helper to generate deterministic price based on symbol name
     const getBasePrice = (sym: string) => {
@@ -27,12 +35,30 @@ export function useBinancePrice(symbol: string) {
       return Math.abs(hash % 1000) + 15; // base price between 15 and 1015
     };
 
+    const startSimulation = () => {
+      if (!isActive) return;
+      const basePrice = getBasePrice(symbol);
+      const change = (Math.random() * 4) - 2; 
+      
+      let currentSimulationPrice = basePrice;
+      setPrice(currentSimulationPrice);
+      setChange24h(change);
+
+      intervalRef.current = window.setInterval(() => {
+        if (!isActive) return;
+        const tickMovement = currentSimulationPrice * (Math.random() - 0.5) * 0.001; 
+        currentSimulationPrice = currentSimulationPrice + tickMovement;
+        setPrice(currentSimulationPrice);
+      }, 1500);
+    };
+
     fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol.toUpperCase()}`)
       .then((response) => {
         if (!response.ok) throw new Error("Not a valid Binance pair");
         return response.json();
       })
       .then((tickerData) => {
+        if (!isActive) return;
         if (tickerData && tickerData.lastPrice) {
           setPrice(parseFloat(tickerData.lastPrice));
           setChange24h(parseFloat(tickerData.priceChangePercent));
@@ -43,9 +69,9 @@ export function useBinancePrice(symbol: string) {
         wsRef.current = binanceSocket;
         
         binanceSocket.onmessage = (event) => {
+          if (!isActive) return;
           try {
             const liveTicker = JSON.parse(event.data);
-            // 'c' represents the current closing price, 'P' represents the 24h price change percentage
             if (liveTicker.c) setPrice(parseFloat(liveTicker.c));
             if (liveTicker.P) setChange24h(parseFloat(liveTicker.P));
           } catch (error) {
@@ -54,20 +80,7 @@ export function useBinancePrice(symbol: string) {
         };
       })
       .catch(() => {
-        // Fallback: Educational Mock Simulation for standard stock assets or unsupported crypto
-        const basePrice = getBasePrice(symbol);
-        const change = (Math.random() * 4) - 2; // Simulate a -2% to 2% daily move
-        
-        let currentSimulationPrice = basePrice;
-        setPrice(currentSimulationPrice);
-        setChange24h(change);
-
-        // Simulate live high-frequency price updates every 1.5 seconds
-        intervalRef.current = window.setInterval(() => {
-          const tickMovement = currentSimulationPrice * (Math.random() - 0.5) * 0.001; // small random walk
-          currentSimulationPrice = currentSimulationPrice + tickMovement;
-          setPrice(currentSimulationPrice);
-        }, 1500);
+        startSimulation();
       });
 
     return cleanup;

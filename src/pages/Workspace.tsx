@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { Plus, Search, Trash2, TrendingDown, TrendingUp, Wallet, RefreshCw } from "lucide-react";
 
 type Position = { _id: string; symbol: string; quantity: number; avg_price: number };
-type Trade = { _id: string; symbol: string; side: string; quantity: number; price: number; total: number; created_at: string };
+type Trade = { _id: string; symbol: string; side: string; quantity: number; price: number; total: number; createdAt: string };
 type Watch = { _id: string; symbol: string };
 
 /**
@@ -342,7 +342,7 @@ const Workspace = () => {
               <tbody>
                 {trades.map((t) => (
                   <tr key={t._id} className="border-t border-border/60">
-                    <td className="p-2 text-xs text-muted-foreground">{new Date(t.created_at).toLocaleTimeString()}</td>
+                    <td className="p-2 text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleTimeString()}</td>
                     <td className="p-2 font-mono">{t.symbol}</td>
                     <td className={`p-2 font-semibold text-xs ${t.side === "BUY" ? "text-success" : "text-destructive"}`}>{t.side}</td>
                     <td className="p-2 text-right font-mono-num">{formatNumber(t.quantity, 4)}</td>

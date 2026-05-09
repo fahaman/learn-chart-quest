@@ -12,7 +12,7 @@ router.get("/portfolio", protect, async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
     const positions = await Position.find({ user_id: req.user._id }).sort({ updatedAt: -1 });
-    const trades = await Trade.find({ user_id: req.user._id }).sort({ created_at: -1 }).limit(50);
+    const trades = await Trade.find({ user_id: req.user._id }).sort({ createdAt: -1 }).limit(50);
     const watchlist = await Watchlist.find({ user_id: req.user._id }).sort({ createdAt: 1 });
     res.json({ cash_balance: user.cash_balance, positions, trades, watchlist });
   } catch (error) {

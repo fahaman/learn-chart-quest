@@ -31,7 +31,7 @@ export const TradingViewChart = ({ symbol }: { symbol: string }) => {
       new window.TradingView.widget({
         autosize: true,
         symbol: symbol.endsWith("USDT") ? `BINANCE:${symbol}` : symbol,
-        interval: symbol.endsWith("USDT") ? "60" : "D",
+        interval: symbol.endsWith("USDT") ? "1" : "D",
         timezone: "Etc/UTC",
         theme: "dark",
         style: "1",
