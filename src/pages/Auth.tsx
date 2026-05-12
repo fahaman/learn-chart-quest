@@ -13,7 +13,7 @@ const schema = z.object({
     .min(2, "Name must be at least 2 characters")
     .max(50, "Name cannot exceed 50 characters")
     .regex(/^[a-zA-Z\s]+$/, "Name should only contain letters"),
-  username: z.string().regex(/^[a-zA-Z]+$/, "Username should only contain letters (no numbers or symbols)").min(1, "Username is required"),
+  username: z.string().regex(/^\S+$/, "Username cannot contain spaces").min(1, "Username is required"),
   email: z.string().trim().email("Invalid email").regex(/@gmail\.com$/, "Please use a valid Gmail address (@gmail.com)").max(255),
   countryCode: z.string().min(1, "Country code is required"),
   phone: z.string().min(5, "Invalid phone number"),
@@ -71,10 +71,10 @@ const Auth = () => {
     setLoading(true);
     try {
       const fullPhone = `${countryCode}${phone}`;
-      const { error } = await sendOtp(fullPhone);
+      const { error } = await sendOtp(fullPhone, email);
       if (error) throw new Error(error);
       setOtpSent(true);
-      toast.success("OTP sent to your phone!");
+      toast.success("OTP sent to your email!");
     } catch (err: any) {
       toast.error(err.message ?? "Failed to send OTP");
     } finally {
@@ -149,7 +149,7 @@ const Auth = () => {
                 <div className="space-y-1.5">
                   <Label htmlFor="username">Username</Label>
                   <Input id="username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} required placeholder="johndoe" />
-                  <p className="text-[10px] text-muted-foreground italic">Only letters, no numbers or symbols.</p>
+                  <p className="text-[10px] text-muted-foreground italic">Letters, numbers, and symbols allowed (no spaces).</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="phone">Phone Number</Label>
@@ -186,7 +186,7 @@ const Auth = () => {
                       <button type="button" onClick={() => setOtpSent(false)} className="text-[10px] text-gold hover:underline">Change Phone</button>
                     </div>
                     <Input id="otp" type="text" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} required placeholder="123456" maxLength={6} className="text-center tracking-[1em] font-bold text-lg" />
-                    <p className="text-[10px] text-muted-foreground italic">Enter the 6-digit code sent to your phone. (Check server logs in demo)</p>
+                    <p className="text-[10px] text-muted-foreground italic">Enter the 6-digit code sent to your email ({email}).</p>
                   </div>
                 )}
               </>

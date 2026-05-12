@@ -16,7 +16,7 @@ type AuthContextType = {
   loading: boolean;
   signIn: (email: string, pass: string) => Promise<{ error?: string }>;
   signUp: (data: { name: string; username: string; email: string; phone: string; pass: string; otp: string }) => Promise<{ error?: string }>;
-  sendOtp: (phone: string) => Promise<{ error?: string }>;
+  sendOtp: (phone: string, email?: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   updateUser: (data: Partial<User>) => void;
 };
@@ -68,11 +68,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const sendOtp = async (phone: string) => {
+  const sendOtp = async (phone: string, email?: string) => {
     try {
       await apiFetch("/auth/send-otp", {
         method: "POST",
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone, email }),
       });
       return {};
     } catch (error: unknown) {

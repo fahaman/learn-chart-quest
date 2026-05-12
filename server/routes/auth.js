@@ -1,27 +1,53 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import nodemailer from "nodemailer";
 import User from "../models/User.js";
 import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET || "learnchart_secret_123", { expiresIn: "30d" });
 
+// Configure email transporter
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER || "your_email@gmail.com",
+    pass: process.env.EMAIL_PASS || "your_app_password"
+  }
+});
+
 // Temporary in-memory store for OTPs (In production, use Redis or a DB)
 const otpStore = new Map();
 
 router.post("/send-otp", async (req, res) => {
-  const { phone } = req.body;
-  if (!phone) return res.status(400).json({ error: "Phone number is required" });
+  const { phone, email } = req.body;
+  if (!phone && !email) return res.status(400).json({ error: "Phone or email is required" });
 
+  // Key the OTP to the phone number for validation later
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   otpStore.set(phone, { otp, expires: Date.now() + 300000 }); // 5 min expiry
 
+  // Always log to terminal for development/testing
   console.log("-----------------------");
-  console.log(`OTP for ${phone}: ${otp}`);
+  console.log(`OTP for ${phone} / ${email || 'No Email'}: ${otp}`);
   console.log("-----------------------");
 
-  res.json({ message: "OTP sent successfully (Check server console)" });
+  if (email) {
+    try {
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER || "your_email@gmail.com",
+        to: email,
+        subject: "LearnChart Quest - Verification Code",
+        text: `Your verification code is: ${otp}\n\nIt will expire in 5 minutes.`
+      });
+      console.log(`[EMAIL] Successfully sent to ${email}`);
+    } catch (err) {
+      console.error("[EMAIL ERROR] Failed to send email:", err.message);
+    }
+  }
+
+  res.json({ message: "OTP sent successfully" });
 });
 
 router.post("/register", async (req, res) => {
@@ -29,7 +55,7 @@ router.post("/register", async (req, res) => {
   
   // Validations
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
-  const usernameRegex = /^[a-zA-Z]+$/;
+  const usernameRegex = /^\S+$/;
   const nameRegex = /^[a-zA-Z\s]+$/;
   const gmailRegex = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
 
@@ -49,7 +75,7 @@ router.post("/register", async (req, res) => {
   }
 
   if (!usernameRegex.test(username)) {
-    return res.status(400).json({ error: "Username should only contain letters (no numbers or symbols)" });
+    return res.status(400).json({ error: "Username cannot contain spaces" });
   }
 
   if (!gmailRegex.test(email)) {

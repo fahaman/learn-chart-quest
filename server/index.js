@@ -1,5 +1,5 @@
+import "dotenv/config";
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
 import connectDB from "./db.js";
 import authRoutes from "./routes/auth.js";
@@ -9,8 +9,6 @@ import learnRoutes from "./routes/learn.js";
 import userRoutes from "./routes/user.js";
 
 import User from "./models/User.js";
-
-dotenv.config();
 
 const ensureAdmin = async () => {
   try {
