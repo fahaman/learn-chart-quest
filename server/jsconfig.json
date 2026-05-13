@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ES2022",
+    "moduleResolution": "Node",
+    "checkJs": false,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["**/*"]
+}
