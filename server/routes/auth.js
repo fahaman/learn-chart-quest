@@ -8,14 +8,10 @@ import { protect } from "../middleware/authMiddleware.js";
 const router = express.Router();
 const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET || "learnchart_secret_123", { expiresIn: "30d" });
 
-// Configure email transporter
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER || "your_email@gmail.com",
-    pass: process.env.EMAIL_PASS || "your_app_password"
-  }
-});
+import { Resend } from 'resend';
+
+// Initialize Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Temporary in-memory store for OTPs (In production, use Redis or a DB)
 const otpStore = new Map();
@@ -35,15 +31,20 @@ router.post("/send-otp", async (req, res) => {
 
   if (email) {
     try {
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER || "your_email@gmail.com",
+      const { data, error } = await resend.emails.send({
+        from: 'LearnChart <onboarding@resend.dev>',
         to: email,
         subject: "LearnChart Quest - Verification Code",
         text: `Your verification code is: ${otp}\n\nIt will expire in 5 minutes.`
       });
-      console.log(`[EMAIL] Successfully sent to ${email}`);
+      
+      if (error) {
+        console.error("[EMAIL ERROR] Resend API error:", error);
+      } else {
+        console.log(`[EMAIL] Successfully sent to ${email} via Resend. ID: ${data.id}`);
+      }
     } catch (err) {
-      console.error("[EMAIL ERROR] Failed to send email:", err.message);
+      console.error("[EMAIL ERROR] Failed to send email via Resend:", err.message);
     }
   }
 
